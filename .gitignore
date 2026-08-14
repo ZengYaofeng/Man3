@@ -3,6 +3,9 @@ target/
 
 # 运行日志
 *.log
+*.err
+app.log
+app.err
 
 # IDE 配置（个人环境相关）
 .idea/
@@ -12,7 +15,24 @@ target/
 .DS_Store
 Thumbs.db
 
-# 临时文件
+# 临时文件 / 分析产物
 *.tmp
 *.swp
 *~
+chapter_*.html
+img_urls.txt
+resp.json
+cp.txt
+tmpmsg/
+
+# AI 工作目录（勿提交）
+.codebuddy/
+
+# ===== 前端 =====
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.*
+frontend/vite.config.*.ts.bak
+frontend/install.err
+frontend/npm-debug.log*
