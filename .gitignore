@@ -3,6 +3,9 @@ target/
 
 # 运行日志
 *.log
+*.err
+app.log
+app.err
 
 # IDE 配置（个人环境相关）
 .idea/

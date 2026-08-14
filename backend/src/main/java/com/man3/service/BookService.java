@@ -46,6 +46,16 @@ public interface BookService {
     long countAll();
 
     /**
+     * 按爬取状态统计数量(用于进度看板)
+     */
+    long countByCrawlStatus(Integer crawlStatus);
+
+    /**
+     * 最近一次爬取时间(任一漫画的 crawl_time 最大值, 用于判断活跃度)
+     */
+    String maxCrawlTime();
+
+    /**
      * 分页 + 多条件查询漫画列表
      *
      * @param page    页码(从1开始)

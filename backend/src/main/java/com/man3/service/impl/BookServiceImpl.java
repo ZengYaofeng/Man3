@@ -1,6 +1,7 @@
 package com.man3.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.man3.entity.Book;
@@ -11,6 +12,8 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -89,6 +92,22 @@ public class BookServiceImpl implements BookService {
     @Override
     public long countAll() {
         return bookMapper.selectCount(null);
+    }
+
+    @Override
+    public long countByCrawlStatus(Integer crawlStatus) {
+        return bookMapper.selectCount(
+                new LambdaQueryWrapper<Book>().eq(Book::getCrawlStatus, crawlStatus));
+    }
+
+    @Override
+    public String maxCrawlTime() {
+        QueryWrapper<Book> qw = new QueryWrapper<>();
+        qw.select("MAX(crawl_time) AS max_crawl_time");
+        Map<String, Object> map = bookMapper.selectMaps(qw).stream().findFirst().orElse(null);
+        if (map == null) return null;
+        Object val = map.get("max_crawl_time");
+        return val == null ? null : val.toString();
     }
 
     @Override

@@ -29,6 +29,9 @@ import java.util.List;
 @Component
 public class IkanmhDetailCrawler {
 
+    /** 详情爬虫是否正在运行(供进度接口实时查询) */
+    public static volatile boolean running = false;
+
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     private final IkanmhProperties props;
@@ -66,20 +69,25 @@ public class IkanmhDetailCrawler {
             books = books.subList(0, limit);
         }
         log.info("待爬详情漫画数量: {}, 本次执行: {}", total, books.size());
+        running = true;
         int success = 0;
         int failed = 0;
-        for (Book book : books) {
-            try {
-                crawlOneBook(book);
-                success++;
-            } catch (Exception e) {
-                failed++;
-                bookService.updateCrawlStatus(book.getId(), IkanmhConstants.STATUS_FAILED);
-                log.error("漫画[{}]({})详情爬取失败: {}", book.getName(), book.getSourceBookId(), e.getMessage());
+        try {
+            for (Book book : books) {
+                try {
+                    crawlOneBook(book);
+                    success++;
+                } catch (Exception e) {
+                    failed++;
+                    bookService.updateCrawlStatus(book.getId(), IkanmhConstants.STATUS_FAILED);
+                    log.error("漫画[{}]({})详情爬取失败: {}", book.getName(), book.getSourceBookId(), e.getMessage());
+                }
+                CrawlerUtils.sleep(props.getDetailRequestIntervalMs());
             }
-            CrawlerUtils.sleep(props.getDetailRequestIntervalMs());
+            log.info("===== 详情爬取结束, 成功{}条, 失败{}条 =====", success, failed);
+        } finally {
+            running = false;
         }
-        log.info("===== 详情爬取结束, 成功{}条, 失败{}条 =====", success, failed);
         return success;
     }
 

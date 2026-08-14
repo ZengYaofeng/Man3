@@ -18,6 +18,11 @@ export default defineConfig({
         target: process.env.VITE_API_TARGET || "http://localhost:8080",
         changeOrigin: true,
       },
+      // 开发环境将 /crawl 代理到后端爬虫接口，避免跨域
+      "/crawl": {
+        target: process.env.VITE_API_TARGET || "http://localhost:8080",
+        changeOrigin: true,
+      },
     },
   },
 });

@@ -35,7 +35,7 @@ const NAV: NavGroup[] = [
   {
     title: '爬虫中心',
     items: [
-      { to: '/crawl/tasks', label: '爬取任务', icon: Bot, disabled: true },
+      { to: '/crawl/progress', label: '爬取进度', icon: Bot },
       { to: '/crawl/logs', label: '爬取日志', icon: ScrollText, disabled: true },
     ],
   },

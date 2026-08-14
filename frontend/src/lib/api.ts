@@ -148,6 +148,40 @@ export async function fetchBookOptions(): Promise<BookOptions> {
   }
 }
 
+export interface CrawlStatus {
+  bookCount: number
+  chapterCount: number
+  bookPageCount: number
+  detail: {
+    running: boolean
+    total: number
+    notCrawled: number
+    chapterDone: number
+    failed: number
+    done: number
+    progress: number
+    lastCrawlTime: string | null
+  }
+}
+
+/** 实时爬取进度（仪表盘/进度页轮询） */
+export async function fetchCrawlStatus(): Promise<CrawlStatus> {
+  const resp = await fetch('/crawl/status')
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const json = await resp.json()
+  if (json.code !== 0) throw new Error(json.message || '业务错误')
+  return json.data as CrawlStatus
+}
+
+/** 触发详情爬虫（后台异步执行，立即返回） */
+export async function startDetailCrawl(limit?: number): Promise<string> {
+  const params = limit && limit > 0 ? `?limit=${limit}` : ''
+  const resp = await fetch(`/crawl/detail${params}`)
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const json = await resp.json()
+  return json.message || '已提交'
+}
+
 /** 统计概览（仪表盘用） */
 export async function fetchOverview() {
   try {
