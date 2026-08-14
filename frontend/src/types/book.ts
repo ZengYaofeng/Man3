@@ -37,6 +37,10 @@ export interface Book {
   createdAt?: string
   /** 更新时间 */
   updatedAt?: string
+  /** 章节总数(非持久化, 由章节表聚合) */
+  chapterCount?: number
+  /** 图片已爬取的章节数(非持久化, 由章节表聚合) */
+  imageDoneCount?: number
 }
 
 // 爬取状态枚举（与后端 crawlStatus 字段对应）
@@ -61,7 +65,7 @@ export function getCrawlStatus(value: number) {
 // 连载状态选项
 export const SERIAL_STATUS_OPTIONS = ['连载中', '已完结']
 
-export type SortField = 'id' | 'clicks' | 'score' | 'updatedAt'
+export type SortField = 'id' | 'clicks' | 'score' | 'updatedAt' | 'chapter' | 'image'
 export type SortOrder = 'asc' | 'desc'
 
 export function formatDateTime(value?: string | null): string {

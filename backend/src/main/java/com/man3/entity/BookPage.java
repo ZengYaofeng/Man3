@@ -27,6 +27,15 @@ public class BookPage {
     /** 图片URL */
     private String imgUrl;
 
+    /** 图片字节大小 */
+    private Long fileSize;
+
+    /** 图片宽度(px) */
+    private Integer imgWidth;
+
+    /** 图片高度(px) */
+    private Integer imgHeight;
+
     /** 本地下载保存路径(可选) */
     private String localPath;
 

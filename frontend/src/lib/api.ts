@@ -38,6 +38,8 @@ const SORT_FIELD_MAP: Record<SortField, string> = {
   clicks: 'clicks',
   score: 'score',
   updatedAt: 'updateTime',
+  chapter: 'chapter',
+  image: 'image',
 }
 
 /**
@@ -57,6 +59,9 @@ export async function fetchBooks(query: BookQuery = {}): Promise<BookPageResult>
   if (query.region && query.region !== 'all') params.set('region', query.region)
   if (query.status && query.status !== 'all') params.set('status', query.status)
   if (query.tag?.trim()) params.set('tag', query.tag.trim())
+  if (query.crawlStatus !== null && query.crawlStatus !== undefined) {
+    params.set('crawlStatus', String(query.crawlStatus))
+  }
   params.set('sortField', SORT_FIELD_MAP[sortBy] ?? 'createdAt')
   params.set('sortDir', sortOrder)
 
@@ -71,12 +76,7 @@ export async function fetchBooks(query: BookQuery = {}): Promise<BookPageResult>
       page: number
       pageSize: number
     }
-    // 后端 BookQueryDTO 暂不支持 crawlStatus 过滤，这里在前端对当前页结果做二次过滤
-    const list =
-      query.crawlStatus !== null && query.crawlStatus !== undefined
-        ? pg.list.filter((b) => b.crawlStatus === query.crawlStatus)
-        : pg.list
-    return { data: list, total: pg.total, page: pg.page, pageSize: pg.pageSize }
+    return { data: pg.list, total: pg.total, page: pg.page, pageSize: pg.pageSize }
   } catch (e) {
     console.warn('[fetchBooks] 后端不可用，降级使用 mock 数据:', e)
     return fallbackMock(query, page, pageSize)
@@ -143,7 +143,7 @@ export async function fetchBookOptions(): Promise<BookOptions> {
     return {
       regions: ['日本', '韩国', '国产', '欧美', '其他'],
       statuses: ['连载中', '已完结'],
-      sortFields: ['score', 'updateTime', 'clicks', 'createdAt'],
+      sortFields: ['score', 'updateTime', 'clicks', 'createdAt', 'chapter', 'image'],
     }
   }
 }
@@ -208,4 +208,45 @@ export async function fetchOverview() {
     doneCount: done,
     failedCount: failed,
   }
+}
+
+export interface Chapter {
+  id: number
+  bookId: number
+  chapterNo: number
+  title: string | null
+  sourceChapterId: string | null
+  chapterUrl: string | null
+  imageCount: number | null
+  crawlStatus: number | null
+  crawlTime: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export interface ChapterPageResult {
+  list: Chapter[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/** 分页查询某漫画的章节（真实后端 /api/chapter/list） */
+export async function fetchChapters(
+  bookId: number,
+  page = 1,
+  pageSize = 20,
+  orderDir: 'asc' | 'desc' = 'asc',
+): Promise<ChapterPageResult> {
+  const params = new URLSearchParams()
+  params.set('bookId', String(bookId))
+  params.set('page', String(page))
+  params.set('pageSize', String(pageSize))
+  params.set('orderDir', orderDir)
+  const resp = await fetch(`/api/chapter/list?${params.toString()}`)
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const json = await resp.json()
+  if (json.code !== 0) throw new Error(json.message || '业务错误')
+  const data = json.data as ChapterPageResult
+  return { list: data.list ?? [], total: data.total ?? 0, page: data.page ?? 1, pageSize: data.pageSize ?? pageSize }
 }

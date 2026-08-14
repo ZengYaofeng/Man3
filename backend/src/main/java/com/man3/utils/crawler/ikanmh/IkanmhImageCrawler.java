@@ -12,6 +12,9 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.stereotype.Component;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -78,7 +81,7 @@ public class IkanmhImageCrawler {
     }
 
     /**
-     * 爬取单个章节的全部图片地址并写入孙表
+     * 爬取单个章节的全部图片地址并写入孙表(含图片大小/尺寸)
      */
     private void crawlOneChapter(Chapter chapter) throws Exception {
         String url = props.getBaseUrl() + IkanmhConstants.CHAPTER_PATH + chapter.getSourceChapterId();
@@ -97,8 +100,32 @@ public class IkanmhImageCrawler {
             throw new IllegalStateException("未解析到有效图片(可能页面结构变化或为广告页)");
         }
 
-        bookPageService.syncPages(chapter.getId(), imgUrls);
+        // 逐张下载解析图片大小与尺寸(失败的项置 null, 不阻塞整章)
+        List<Long> fileSizes = new ArrayList<>();
+        List<Integer> widths = new ArrayList<>();
+        List<Integer> heights = new ArrayList<>();
+        for (String imgUrl : imgUrls) {
+            try {
+                byte[] bytes = httpClientUtils.downloadBytes(imgUrl);
+                fileSizes.add((long) bytes.length);
+                BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
+                if (image != null) {
+                    widths.add(image.getWidth());
+                    heights.add(image.getHeight());
+                } else {
+                    widths.add(null);
+                    heights.add(null);
+                }
+            } catch (Exception e) {
+                log.warn("图片下载/解析失败 {}: {}", imgUrl, e.getMessage());
+                fileSizes.add(null);
+                widths.add(null);
+                heights.add(null);
+            }
+        }
+
+        bookPageService.syncPages(chapter.getId(), imgUrls, fileSizes, widths, heights);
         chapterService.updateImageResult(chapter.getId(), imgUrls.size(), true);
-        log.info("章节[{}({})]解析{}张图片完成", chapter.getTitle(), chapter.getSourceChapterId(), imgUrls.size());
+        log.info("章节[{}({})]解析{}张图片完成(含大小/尺寸)", chapter.getTitle(), chapter.getSourceChapterId(), imgUrls.size());
     }
 }

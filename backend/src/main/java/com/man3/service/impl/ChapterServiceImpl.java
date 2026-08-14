@@ -1,6 +1,8 @@
 package com.man3.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.man3.entity.Chapter;
 import com.man3.mapper.ChapterMapper;
 import com.man3.service.ChapterService;
@@ -76,6 +78,18 @@ public class ChapterServiceImpl implements ChapterService {
     }
 
     @Override
+    public IPage<Chapter> pageByBookId(Long bookId, int page, int pageSize, String orderDir) {
+        LambdaQueryWrapper<Chapter> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Chapter::getBookId, bookId);
+        if ("desc".equalsIgnoreCase(orderDir)) {
+            wrapper.orderByDesc(Chapter::getChapterNo);
+        } else {
+            wrapper.orderByAsc(Chapter::getChapterNo);
+        }
+        return chapterMapper.selectPage(new Page<>(page, pageSize), wrapper);
+    }
+
+    @Override
     public long countAll() {
         return chapterMapper.selectCount(null);
     }
@@ -100,5 +114,24 @@ public class ChapterServiceImpl implements ChapterService {
         update.setCrawlTime(LocalDateTime.now());
         update.setUpdatedAt(LocalDateTime.now());
         chapterMapper.updateById(update);
+    }
+
+    @Override
+    public Map<Long, ChapterStats> batchStats(List<Long> bookIds) {
+        Map<Long, ChapterStats> result = new HashMap<>();
+        if (bookIds == null || bookIds.isEmpty()) {
+            return result;
+        }
+        List<Map<String, Object>> rows = chapterMapper.batchChapterStats(bookIds);
+        for (Map<String, Object> row : rows) {
+            Long bookId = ((Number) row.get("bookId")).longValue();
+            long totalCh = row.get("totalCh") == null ? 0L : ((Number) row.get("totalCh")).longValue();
+            long imageDone = row.get("imageDone") == null ? 0L : ((Number) row.get("imageDone")).longValue();
+            ChapterStats stats = new ChapterStats();
+            stats.totalCh = totalCh;
+            stats.imageDone = imageDone;
+            result.put(bookId, stats);
+        }
+        return result;
     }
 }

@@ -44,7 +44,8 @@ public class BookApiController {
         IPage<Book> result = bookService.pageQuery(
                 page, pageSize,
                 query.getKeyword(), query.getRegion(), query.getStatus(),
-                query.getTag(), query.getSortField(), query.getSortDir());
+                query.getTag(), query.getSortField(), query.getSortDir(),
+                query.getCrawlStatus());
 
         PageResult<Book> pageResult = PageResult.of(
                 result.getCurrent(), result.getSize(), result.getTotal(), result.getRecords());

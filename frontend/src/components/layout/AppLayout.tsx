@@ -30,7 +30,10 @@ const NAV: NavGroup[] = [
   },
   {
     title: '漫画管理',
-    items: [{ to: '/comics', label: '漫画列表', icon: ListFilter }],
+    items: [
+      { to: '/comics', label: '漫画列表', icon: ListFilter },
+      { to: '/chapters', label: '章节列表', icon: BookOpen },
+    ],
   },
   {
     title: '爬虫中心',

@@ -115,4 +115,16 @@ public class CrawlController {
         map.put("message", "全量爬取任务已提交, 后台异步执行中");
         return map;
     }
+
+    /** 停止当前正在运行的爬虫(当前批次处理完即退出, 不强制中断) */
+    @GetMapping("/stop")
+    public Map<String, Object> stop() {
+        log.info("收到停止爬虫指令");
+        IkanmhDetailCrawler.requestStop();
+        IkanmhListCrawler.requestStop();
+        Map<String, Object> map = new HashMap<>();
+        map.put("code", 0);
+        map.put("message", "已发送停止指令, 爬虫将在当前批次结束后停止");
+        return map;
+    }
 }

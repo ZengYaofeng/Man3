@@ -287,6 +287,24 @@ export default function ComicList() {
                     onSort={handleSort}
                   />
                 </TableHead>
+                <TableHead className="text-center">
+                  <SortHeader
+                    field="chapter"
+                    label="章节进度"
+                    active={sortBy === 'chapter'}
+                    order={sortOrder}
+                    onSort={handleSort}
+                  />
+                </TableHead>
+                <TableHead className="text-center">
+                  <SortHeader
+                    field="image"
+                    label="图片进度"
+                    active={sortBy === 'image'}
+                    order={sortOrder}
+                    onSort={handleSort}
+                  />
+                </TableHead>
                 <TableHead>爬取状态</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
@@ -294,13 +312,13 @@ export default function ComicList() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={15} className="h-32 text-center text-slate-400">
+                  <TableCell colSpan={17} className="h-32 text-center text-slate-400">
                     加载中…
                   </TableCell>
                 </TableRow>
               ) : data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={15} className="h-32 text-center text-slate-400">
+                  <TableCell colSpan={17} className="h-32 text-center text-slate-400">
                     暂无数据
                   </TableCell>
                 </TableRow>
@@ -353,6 +371,12 @@ export default function ComicList() {
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-slate-500">
                         {formatDateTime(b.updateTime)}
+                      </TableCell>
+                      <TableCell className="text-center tabular-nums">
+                        <ProgressCell done={b.chapterCount ?? 0} total={b.chapterCount ?? 0} />
+                      </TableCell>
+                      <TableCell className="text-center tabular-nums">
+                        <ProgressCell done={b.imageDoneCount ?? 0} total={b.chapterCount ?? 0} />
                       </TableCell>
                       <TableCell>
                         <span
@@ -481,6 +505,29 @@ export default function ComicList() {
       </div>
 
       <ComicDetailDrawer book={selected} onClose={() => setSelected(null)} />
+    </div>
+  )
+}
+
+/** 进度单元格: 已爬/总数 + 进度条 */
+function ProgressCell({ done, total }: { done: number; total: number }) {
+  const t = total || 0
+  const d = done || 0
+  const pct = t > 0 ? Math.round((d / t) * 100) : 0
+  const full = t > 0 && d >= t
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="flex items-center gap-1 text-xs tabular-nums">
+        <span className={full ? 'font-medium text-emerald-600' : 'text-slate-600'}>{d}</span>
+        <span className="text-slate-300">/</span>
+        <span className="text-slate-500">{t}</span>
+      </div>
+      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100">
+        <div
+          className={`h-full rounded-full ${full ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
     </div>
   )
 }

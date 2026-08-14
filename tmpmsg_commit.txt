@@ -1,0 +1,1 @@
+﻿enhance pagination in comic list page

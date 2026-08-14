@@ -68,7 +68,8 @@ public interface BookService {
      * @param sortDir  排序方向 asc/desc
      */
     IPage<Book> pageQuery(int page, int pageSize, String keyword, String region,
-                          String status, String tag, String sortField, String sortDir);
+                          String status, String tag, String sortField, String sortDir,
+                          Integer crawlStatus);
 
     /**
      * 按主键查询漫画

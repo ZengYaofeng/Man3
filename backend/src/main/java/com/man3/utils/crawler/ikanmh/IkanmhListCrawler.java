@@ -26,6 +26,14 @@ public class IkanmhListCrawler {
     /** 匹配评分类名 star-数字 */
     private static final Pattern STAR_PATTERN = Pattern.compile("star-(\\d)");
 
+    /** 列表爬虫停止标志(收到停止指令后置 true, 翻页结束前退出) */
+    public static volatile boolean stopFlag = false;
+
+    /** 请求外部停止爬虫 */
+    public static void requestStop() {
+        stopFlag = true;
+    }
+
     private final IkanmhProperties props;
     private final HttpClientUtils httpClientUtils;
     private final BookService bookService;
@@ -42,7 +50,12 @@ public class IkanmhListCrawler {
     public int crawlAllBooks() {
         int total = 0;
         int page = 1;
+        stopFlag = false;
         while (true) {
+            if (stopFlag) {
+                log.info("收到停止指令, 中断列表爬取(已处理{}条)", total);
+                break;
+            }
             String url = props.getBaseUrl() + IkanmhConstants.BOOKLIST_PATH + "?page=" + page;
             Document doc;
             try {

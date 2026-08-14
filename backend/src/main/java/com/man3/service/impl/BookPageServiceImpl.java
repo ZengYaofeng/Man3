@@ -27,7 +27,8 @@ public class BookPageServiceImpl implements BookPageService {
     }
 
     @Override
-    public void syncPages(Long chapterId, List<String> imgUrls) {
+    public void syncPages(Long chapterId, List<String> imgUrls, List<Long> fileSizes,
+                          List<Integer> widths, List<Integer> heights) {
         if (chapterId == null || imgUrls == null || imgUrls.isEmpty()) {
             return;
         }
@@ -48,6 +49,15 @@ public class BookPageServiceImpl implements BookPageService {
             page.setChapterId(chapterId);
             page.setPageNo(pageNo);
             page.setImgUrl(imgUrls.get(i));
+            if (fileSizes != null && i < fileSizes.size()) {
+                page.setFileSize(fileSizes.get(i));
+            }
+            if (widths != null && i < widths.size()) {
+                page.setImgWidth(widths.get(i));
+            }
+            if (heights != null && i < heights.size()) {
+                page.setImgHeight(heights.get(i));
+            }
             page.setDownloadStatus(0);
             page.setCreatedAt(now);
             page.setUpdatedAt(now);

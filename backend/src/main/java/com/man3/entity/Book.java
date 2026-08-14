@@ -1,6 +1,7 @@
 package com.man3.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -69,4 +70,12 @@ public class Book {
 
     /** 更新时间 */
     private LocalDateTime updatedAt;
+
+    /** 章节总数(非持久化, 由章节表聚合填充) */
+    @TableField(exist = false)
+    private Long chapterCount;
+
+    /** 图片已爬取的章节数(非持久化, 由章节表聚合填充) */
+    @TableField(exist = false)
+    private Long imageDoneCount;
 }
