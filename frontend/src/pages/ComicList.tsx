@@ -75,6 +75,7 @@ export default function ComicList() {
   const [crawlStatus, setCrawlStatus] = useState('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const [jumpValue, setJumpValue] = useState('')
   const [sortBy, setSortBy] = useState<SortField>('id')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [loading, setLoading] = useState(false)
@@ -124,6 +125,16 @@ export default function ComicList() {
       setSortBy(f)
       setSortOrder('desc')
     }
+  }
+
+  // 跳页：将输入框的数值限制在合法范围内
+  const handleJump = () => {
+    const n = parseInt(jumpValue, 10)
+    if (!Number.isNaN(n)) {
+      const target = Math.min(Math.max(1, n), totalPages)
+      setPage(target)
+    }
+    setJumpValue('')
   }
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
@@ -372,8 +383,10 @@ export default function ComicList() {
 
       {/* 分页 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm text-slate-500">
-          共 <span className="font-medium text-slate-700">{total}</span> 条
+        <div className="flex items-center gap-3 text-sm text-slate-500">
+          <span>
+            共 <span className="font-medium text-slate-700">{total}</span> 条
+          </span>
           <Select
             value={String(pageSize)}
             onValueChange={(v) => {
@@ -392,9 +405,21 @@ export default function ComicList() {
               ))}
             </SelectContent>
           </Select>
+          <span className="whitespace-nowrap">
+            第 <span className="font-medium text-slate-700">{page}</span> / {totalPages} 页
+          </span>
         </div>
 
         <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => setPage(1)}
+            title="首页"
+          >
+            首页
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -422,6 +447,36 @@ export default function ComicList() {
           >
             下一页
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page >= totalPages}
+            onClick={() => setPage(totalPages)}
+            title="末页"
+          >
+            末页
+          </Button>
+
+          {/* 跳页：输入页码回车或点击跳转 */}
+          <div className="ml-2 flex items-center gap-1.5 text-sm text-slate-500">
+            <span className="whitespace-nowrap">跳至</span>
+            <Input
+              type="number"
+              min={1}
+              max={totalPages}
+              value={jumpValue}
+              onChange={(e) => setJumpValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleJump()
+              }}
+              className="h-8 w-16 text-center"
+              placeholder={String(page)}
+            />
+            <span>页</span>
+            <Button size="sm" variant="secondary" onClick={handleJump}>
+              跳转
+            </Button>
+          </div>
         </div>
       </div>
 
