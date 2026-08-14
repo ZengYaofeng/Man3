@@ -30,3 +30,5 @@ frontend/dist/
 frontend/.env
 frontend/.env.*
 frontend/vite.config.*.ts.bak
+frontend/install.err
+frontend/npm-debug.log*
