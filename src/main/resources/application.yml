@@ -1,0 +1,41 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: man3-crawler
+  datasource:
+    url: jdbc:mysql://localhost:3306/man3?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: null
+
+# 爬虫自定义配置
+crawler:
+  ikanmh:
+    base-url: https://www.ikanmh.top
+    user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36
+    timeout-ms: 15000
+    retry-times: 3
+    # 本机系统代理(若无需代理请改为 proxy-enabled: false)
+    proxy-enabled: true
+    proxy-host: 127.0.0.1
+    proxy-port: 10808
+    list-request-interval-ms: 800
+    detail-request-interval-ms: 1500
+
+logging:
+  level:
+    com.man3: info
