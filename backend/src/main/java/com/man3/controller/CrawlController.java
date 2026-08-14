@@ -21,7 +21,7 @@ import java.util.concurrent.CompletableFuture;
  */
 @Slf4j
 @RestController
-@RequestMapping("/crawl")
+@RequestMapping("/api/crawl")
 public class CrawlController {
 
     private final IkanmhListCrawler listCrawler;

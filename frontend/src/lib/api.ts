@@ -166,7 +166,7 @@ export interface CrawlStatus {
 
 /** 实时爬取进度（仪表盘/进度页轮询） */
 export async function fetchCrawlStatus(): Promise<CrawlStatus> {
-  const resp = await fetch('/crawl/status')
+  const resp = await fetch('/api/crawl/status')
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
   const json = await resp.json()
   if (json.code !== 0) throw new Error(json.message || '业务错误')
@@ -176,7 +176,7 @@ export async function fetchCrawlStatus(): Promise<CrawlStatus> {
 /** 触发详情爬虫（后台异步执行，立即返回） */
 export async function startDetailCrawl(limit?: number): Promise<string> {
   const params = limit && limit > 0 ? `?limit=${limit}` : ''
-  const resp = await fetch(`/crawl/detail${params}`)
+  const resp = await fetch(`/api/crawl/detail${params}`)
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
   const json = await resp.json()
   return json.message || '已提交'

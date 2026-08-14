@@ -13,13 +13,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // 开发环境将 /api 代理到后端，避免跨域
+      // 开发环境将 /api 代理到后端，避免跨域（含 /api/book/* 与 /api/crawl/*）
       "/api": {
-        target: process.env.VITE_API_TARGET || "http://localhost:8080",
-        changeOrigin: true,
-      },
-      // 开发环境将 /crawl 代理到后端爬虫接口，避免跨域
-      "/crawl": {
         target: process.env.VITE_API_TARGET || "http://localhost:8080",
         changeOrigin: true,
       },
