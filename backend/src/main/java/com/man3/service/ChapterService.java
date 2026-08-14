@@ -21,6 +21,11 @@ public interface ChapterService {
     List<Chapter> listByBookId(Long bookId);
 
     /**
+     * 统计某漫画的章节数量(用于断点续爬判断)
+     */
+    long countByBookId(Long bookId);
+
+    /**
      * 章节总数
      */
     long countAll();

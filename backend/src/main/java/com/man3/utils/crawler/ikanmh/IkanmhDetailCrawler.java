@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 
@@ -51,12 +52,15 @@ public class IkanmhDetailCrawler {
     }
 
     /**
-     * 爬取主表中未爬详情的漫画, 返回成功数
+     * 爬取主表中未爬/失败详情的漫画, 实现断点续爬(已成功=1的不会重复处理), 返回成功数
      *
      * @param limit 最多处理条数, <=0 表示不限
      */
     public int crawlAllDetails(int limit) {
-        List<Book> books = bookService.listByCrawlStatus(IkanmhConstants.STATUS_NOT_CRAWLED);
+        // 断点续爬: 只处理 未爬(0) 与 上次失败(-1) 的漫画, 已完成(1)自动跳过, 不重复入库也不浪费请求
+        List<Integer> statuses = Arrays.asList(
+                IkanmhConstants.STATUS_NOT_CRAWLED, IkanmhConstants.STATUS_FAILED);
+        List<Book> books = bookService.listByCrawlStatuses(statuses);
         int total = books.size();
         if (limit > 0 && total > limit) {
             books = books.subList(0, limit);
@@ -146,15 +150,24 @@ public class IkanmhDetailCrawler {
         bookService.updateDetail(update);
 
         // 2. 章节列表(全部章节已渲染在 HTML 中, 无需额外请求)
-        Elements chapterLinks = doc.select("#detail-list-select li a[href*='/chapter/']");
-        List<Chapter> chapters = parseChapters(book.getId(), chapterLinks);
-        if (!chapters.isEmpty()) {
-            chapterService.syncChapters(book.getId(), chapters);
+        //    断点续爬优化: 若该漫画章节表已有数据, 说明上次已同步过章节, 直接跳过重新解析章节,
+        //    既不重复入库也不浪费重复请求; 仅当章节表为空时才解析并同步
+        long existChapters = chapterService.countByBookId(book.getId());
+        int chapterCount = (int) existChapters;
+        if (existChapters == 0) {
+            Elements chapterLinks = doc.select("#detail-list-select li a[href*='/chapter/']");
+            List<Chapter> chapters = parseChapters(book.getId(), chapterLinks);
+            if (!chapters.isEmpty()) {
+                chapterService.syncChapters(book.getId(), chapters);
+                chapterCount = chapters.size();
+            }
+        } else {
+            log.info("漫画[{}]章节表已有{}条, 跳过重复同步", book.getName(), existChapters);
         }
 
         // 3. 标记完成
         bookService.updateCrawlStatus(book.getId(), IkanmhConstants.STATUS_CHAPTER_DONE);
-        log.info("漫画[{}]详情+{}个章节完成", book.getName(), chapters.size());
+        log.info("漫画[{}]详情完成(章节{}条)", book.getName(), chapterCount);
     }
 
     /**

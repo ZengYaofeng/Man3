@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -57,6 +58,16 @@ public class BookServiceImpl implements BookService {
     public List<Book> listByCrawlStatus(Integer crawlStatus) {
         return bookMapper.selectList(new LambdaQueryWrapper<Book>()
                 .eq(Book::getCrawlStatus, crawlStatus)
+                .orderByAsc(Book::getId));
+    }
+
+    @Override
+    public List<Book> listByCrawlStatuses(List<Integer> crawlStatuses) {
+        if (crawlStatuses == null || crawlStatuses.isEmpty()) {
+            return new ArrayList<>();
+        }
+        return bookMapper.selectList(new LambdaQueryWrapper<Book>()
+                .in(Book::getCrawlStatus, crawlStatuses)
                 .orderByAsc(Book::getId));
     }
 

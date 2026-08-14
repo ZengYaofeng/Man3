@@ -70,6 +70,12 @@ public class ChapterServiceImpl implements ChapterService {
     }
 
     @Override
+    public long countByBookId(Long bookId) {
+        return chapterMapper.selectCount(new LambdaQueryWrapper<Chapter>()
+                .eq(Chapter::getBookId, bookId));
+    }
+
+    @Override
     public long countAll() {
         return chapterMapper.selectCount(null);
     }

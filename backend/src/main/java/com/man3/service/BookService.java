@@ -26,6 +26,11 @@ public interface BookService {
     List<Book> listByCrawlStatus(Integer crawlStatus);
 
     /**
+     * 按多个爬取状态查询(用于断点续爬: 同时查询未爬与失败状态)
+     */
+    List<Book> listByCrawlStatuses(List<Integer> crawlStatuses);
+
+    /**
      * 按来源漫画ID查询
      */
     Book getBySourceBookId(String sourceBookId);

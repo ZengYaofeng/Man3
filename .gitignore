@@ -20,6 +20,7 @@ chapter_*.html
 img_urls.txt
 resp.json
 cp.txt
+tmpmsg/
 
 # AI 工作目录（勿提交）
 .codebuddy/
