@@ -4,7 +4,9 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.man3.api.dto.BookQueryDTO;
 import com.man3.api.dto.PageResult;
 import com.man3.entity.Book;
+import com.man3.mapper.BookPageMapper;
 import com.man3.service.BookService;
+import com.man3.service.ChapterService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,9 +28,14 @@ import java.util.Map;
 public class BookApiController {
 
     private final BookService bookService;
+    private final ChapterService chapterService;
+    private final BookPageMapper bookPageMapper;
 
-    public BookApiController(BookService bookService) {
+    public BookApiController(BookService bookService, ChapterService chapterService,
+                             BookPageMapper bookPageMapper) {
         this.bookService = bookService;
+        this.chapterService = chapterService;
+        this.bookPageMapper = bookPageMapper;
     }
 
     /**
@@ -39,22 +46,30 @@ public class BookApiController {
      */
     @GetMapping("/list")
     public Map<String, Object> list(@ModelAttribute BookQueryDTO query) {
-        int page = query.getPage() == null ? 1 : query.getPage();
-        int pageSize = query.getPageSize() == null ? 20 : query.getPageSize();
-        IPage<Book> result = bookService.pageQuery(
-                page, pageSize,
-                query.getKeyword(), query.getRegion(), query.getStatus(),
-                query.getTag(), query.getSortField(), query.getSortDir(),
-                query.getCrawlStatus());
+        try {
+            int page = query.getPage() == null ? 1 : query.getPage();
+            int pageSize = query.getPageSize() == null ? 20 : query.getPageSize();
+            IPage<Book> result = bookService.pageQuery(
+                    page, pageSize,
+                    query.getKeyword(), query.getRegion(), query.getStatus(),
+                    query.getTag(), query.getSortField(), query.getSortDir(),
+                    query.getCrawlStatus());
 
-        PageResult<Book> pageResult = PageResult.of(
-                result.getCurrent(), result.getSize(), result.getTotal(), result.getRecords());
+            PageResult<Book> pageResult = PageResult.of(
+                    result.getCurrent(), result.getSize(), result.getTotal(), result.getRecords());
 
-        Map<String, Object> resp = new HashMap<>();
-        resp.put("code", 0);
-        resp.put("message", "success");
-        resp.put("data", pageResult);
-        return resp;
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("code", 0);
+            resp.put("message", "success");
+            resp.put("data", pageResult);
+            return resp;
+        } catch (Exception e) {
+            log.error("/api/book/list error", e);
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("code", 500);
+            resp.put("message", e.getMessage());
+            return resp;
+        }
     }
 
     /**
@@ -83,6 +98,34 @@ public class BookApiController {
         data.put("regions", new String[]{"日本", "韩国", "国产", "欧美", "其他"});
         data.put("statuses", new String[]{"连载中", "已完结"});
         data.put("sortFields", new String[]{"score", "updateTime", "clicks", "createdAt"});
+        resp.put("data", data);
+        return resp;
+    }
+
+    /**
+     * 仪表盘统计概览(真实数据)
+     * GET /api/book/stats
+     * 返回: 漫画总数 / 章节总数 / 图片总数 / 已下载图片数 / 爬取完成数 / 爬取失败数
+     */
+    @GetMapping("/stats")
+    public Map<String, Object> stats() {
+        Map<String, Object> data = new HashMap<>();
+        data.put("bookCount", bookService.countAll());
+        data.put("chapterCount", chapterService.countAll());
+
+        Map<String, Object> img = bookPageMapper.stats();
+        long totalImg = img.get("total") == null ? 0L : ((Number) img.get("total")).longValue();
+        long downloadedImg = img.get("downloaded") == null ? 0L : ((Number) img.get("downloaded")).longValue();
+        data.put("totalImageCount", totalImg);
+        data.put("downloadedImageCount", downloadedImg);
+
+        // crawl_status: 3-全部完成 -1-失败
+        data.put("doneCount", bookService.countByCrawlStatus(3));
+        data.put("failedCount", bookService.countByCrawlStatus(-1));
+
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("code", 0);
+        resp.put("message", "success");
         resp.put("data", data);
         return resp;
     }

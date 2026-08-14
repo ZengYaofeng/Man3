@@ -38,4 +38,19 @@ public class IkanmhProperties {
 
     /** 详情页请求间隔(毫秒) */
     private long detailRequestIntervalMs;
+
+    /** 图片下载根目录(本地存储路径, 将按 漫画标题/章节标题/页码 建子目录) */
+    private String downloadDir;
+
+    /** 下载线程池大小(同时工作的下载线程数) */
+    private int downloadThreadPoolSize;
+
+    /** 每个连接的最大并发下载任务数(全局信号量, 防止打爆源站) */
+    private int maxConcurrentDownloads;
+
+    /** 单张图片下载失败重试次数 */
+    private int downloadRetryTimes;
+
+    /** 下载请求间隔(毫秒, 用于限流, 避免被封) */
+    private long downloadRequestIntervalMs;
 }

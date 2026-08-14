@@ -1,5 +1,6 @@
 package com.man3.controller;
 
+import com.man3.mapper.BookPageMapper;
 import com.man3.service.BookPageService;
 import com.man3.service.BookService;
 import com.man3.service.ChapterService;
@@ -32,8 +33,9 @@ public class CrawlController {
     private final BookPageService bookPageService;
 
     public CrawlController(IkanmhListCrawler listCrawler, IkanmhDetailCrawler detailCrawler,
-                           IkanmhImageCrawler imageCrawler, BookService bookService,
-                           ChapterService chapterService, BookPageService bookPageService) {
+                           IkanmhImageCrawler imageCrawler,
+                           BookService bookService, ChapterService chapterService,
+                           BookPageService bookPageService) {
         this.listCrawler = listCrawler;
         this.detailCrawler = detailCrawler;
         this.imageCrawler = imageCrawler;
@@ -64,7 +66,52 @@ public class CrawlController {
             put("progress", total == 0 ? 0 : (chapterDone * 100 / total));
             put("lastCrawlTime", bookService.maxCrawlTime());
         }});
+        // 图片爬虫进度
+        long imgPending = chapterService.countByImageStatus(IkanmhConstants.STATUS_NOT_CRAWLED);
+        long imgDone = chapterService.countByImageStatus(IkanmhConstants.STATUS_IMAGE_DONE);
+        long imgFailed = chapterService.countByImageStatus(IkanmhConstants.STATUS_FAILED);
+        long imgProcessing = chapterService.countByImageStatus(IkanmhConstants.STATUS_IMAGE_PROCESSING);
+        long imgTotalCh = chapterService.countAll();
+        long imgProcessed = imgDone + imgFailed;
+        // 章节维度进度(已处理章节/总章节)
+        double chProgress = imgTotalCh == 0 ? 0 : (double) imgProcessed * 100.0 / imgTotalCh;
+        double imgSuccessRate = imgProcessed == 0 ? 0 : (double) imgDone * 100.0 / imgProcessed;
+        long bookPageCount = bookPageService.countAll();
+        // 图片维度进度: 已入库图片 / 估算图片总数
+        // 估算图片总数 = 已爬章节平均每章图片数 × 总章节数
+        long sumImgCrawled = chapterService.sumImageCountCrawled();
+        double avgImgPerChapter = (imgProcessed > 0) ? (double) sumImgCrawled / imgProcessed : 0;
+        double imgTotalEstimate = avgImgPerChapter * imgTotalCh;
+        double imgProgress = (imgTotalEstimate > 0) ? (double) bookPageCount * 100.0 / imgTotalEstimate : 0;
+
+        map.put("image", new HashMap<String, Object>() {{
+            put("running", IkanmhImageCrawler.running);
+            put("pending", imgPending);   // 待爬章节
+            put("done", imgDone);         // 图片已爬章节
+            put("failed", imgFailed);     // 失败章节
+            put("processing", imgProcessing); // 处理中章节(已领取未完)
+            put("totalCh", imgTotalCh);   // 章节总数
+            put("processed", imgProcessed); // 已处理章节
+            put("progress", Math.round(chProgress * 100.0) / 100.0);   // 章节进度(%)
+            put("successRate", Math.round(imgSuccessRate * 100.0) / 100.0);
+            put("bookPageCount", bookPageCount); // 已入库图片总数
+            put("imgProgress", Math.round(imgProgress * 100.0) / 100.0); // 图片进度(%)
+        }});
         return map;
+    }
+
+    private static long toLong(Object o) {
+        if (o == null) {
+            return 0L;
+        }
+        if (o instanceof Number) {
+            return ((Number) o).longValue();
+        }
+        try {
+            return Long.parseLong(o.toString());
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
     }
 
     /** 第一步: 爬全部列表页填充主表(异步执行, 立即返回) */
@@ -95,10 +142,27 @@ public class CrawlController {
     public Map<String, Object> crawlImage(Integer limit) {
         log.info("收到图片爬取任务, limit={}", limit);
         final int lim = limit == null ? -1 : limit;
-        CompletableFuture.runAsync(() -> imageCrawler.crawlAllImages(lim));
+        CompletableFuture.runAsync(() -> imageCrawler.crawlAllImages());
         Map<String, Object> map = new HashMap<>();
         map.put("code", 0);
         map.put("message", "图片爬取任务已提交, 后台异步执行中");
+        return map;
+    }
+
+    /** 启动图片爬虫(全量, 断点续爬), 与 /image?limit=-1 等价, 供前端"开始"按钮调用 */
+    @GetMapping("/image/start")
+    public Map<String, Object> startImage() {
+        if (IkanmhImageCrawler.running) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("code", 1);
+            map.put("message", "图片爬虫已在运行中");
+            return map;
+        }
+        log.info("收到启动图片爬取任务(全量)");
+        CompletableFuture.runAsync(() -> imageCrawler.crawlAllImages());
+        Map<String, Object> map = new HashMap<>();
+        map.put("code", 0);
+        map.put("message", "图片爬取任务已提交, 后台异步执行中(断点续爬)");
         return map;
     }
 
@@ -122,6 +186,7 @@ public class CrawlController {
         log.info("收到停止爬虫指令");
         IkanmhDetailCrawler.requestStop();
         IkanmhListCrawler.requestStop();
+        IkanmhImageCrawler.requestStop();
         Map<String, Object> map = new HashMap<>();
         map.put("code", 0);
         map.put("message", "已发送停止指令, 爬虫将在当前批次结束后停止");

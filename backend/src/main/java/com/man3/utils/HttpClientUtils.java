@@ -60,6 +60,68 @@ public class HttpClientUtils {
      * GET 请求下载二进制数据(用于获取图片字节大小/尺寸), 失败自动重试
      * 使用 HttpURLConnection 以精确控制连接/读取超时, 避免源站慢响应导致无限挂起
      */
+    /**
+     * 只下载图片的头部片段(用于解析尺寸, 不下载完整图片), 失败自动重试
+     *
+     * @param url      图片地址
+     * @param maxBytes 最多读取的字节数(建议 64KB, 足够解析常见图片格式尺寸)
+     */
+    public byte[] downloadBytesRange(String url, int maxBytes) throws IOException {
+        IOException lastError = null;
+        int timeout = Math.max(props.getTimeoutMs(), 10000);
+        for (int i = 1; i <= props.getRetryTimes(); i++) {
+            java.net.HttpURLConnection conn = null;
+            try {
+                java.net.URL u = new java.net.URL(url);
+                conn = (java.net.HttpURLConnection) u.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(timeout);
+                conn.setReadTimeout(timeout);
+                conn.setRequestProperty("User-Agent", props.getUserAgent());
+                conn.setRequestProperty("Referer", props.getBaseUrl() + "/");
+                conn.setRequestProperty("Accept", "image/avif,image/webp,image/png,image/*,*/*;q=0.8");
+                conn.setRequestProperty("Range", "bytes=0-" + (maxBytes - 1));
+                if (props.isProxyEnabled()) {
+                    java.net.Proxy proxy = new java.net.Proxy(
+                            java.net.Proxy.Type.HTTP,
+                            new java.net.InetSocketAddress(props.getProxyHost(), props.getProxyPort()));
+                    conn = (java.net.HttpURLConnection) u.openConnection(proxy);
+                    conn.setConnectTimeout(timeout);
+                    conn.setReadTimeout(timeout);
+                    conn.setRequestMethod("GET");
+                    conn.setRequestProperty("User-Agent", props.getUserAgent());
+                    conn.setRequestProperty("Referer", props.getBaseUrl() + "/");
+                    conn.setRequestProperty("Range", "bytes=0-" + (maxBytes - 1));
+                }
+                try (InputStream in = conn.getInputStream();
+                     ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                    byte[] buf = new byte[8192];
+                    int n;
+                    int total = 0;
+                    while ((n = in.read(buf)) != -1) {
+                        out.write(buf, 0, n);
+                        total += n;
+                        if (total >= maxBytes) {
+                            break;
+                        }
+                    }
+                    return out.toByteArray();
+                }
+            } catch (IOException e) {
+                lastError = e;
+                log.warn("图片头请求失败 {}(第{}/{}次): {}", url, i, props.getRetryTimes(), e.getMessage());
+                if (i < props.getRetryTimes()) {
+                    CrawlerUtils.sleep(1000L * i);
+                }
+            } finally {
+                if (conn != null) {
+                    conn.disconnect();
+                }
+            }
+        }
+        throw lastError;
+    }
+
     public byte[] downloadBytes(String url) throws IOException {
         IOException lastError = null;
         int timeout = Math.max(props.getTimeoutMs(), 10000);

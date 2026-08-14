@@ -76,7 +76,7 @@ export default function ComicList() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [jumpValue, setJumpValue] = useState('')
-  const [sortBy, setSortBy] = useState<SortField>('id')
+  const [sortBy, setSortBy] = useState<SortField>('image_done')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<Book[]>([])
@@ -305,6 +305,15 @@ export default function ComicList() {
                     onSort={handleSort}
                   />
                 </TableHead>
+                <TableHead className="text-center">
+                  <SortHeader
+                    field="image_done"
+                    label="入库完成"
+                    active={sortBy === 'image_done'}
+                    order={sortOrder}
+                    onSort={handleSort}
+                  />
+                </TableHead>
                 <TableHead>爬取状态</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
@@ -312,13 +321,13 @@ export default function ComicList() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={17} className="h-32 text-center text-slate-400">
+                  <TableCell colSpan={18} className="h-32 text-center text-slate-400">
                     加载中…
                   </TableCell>
                 </TableRow>
               ) : data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={17} className="h-32 text-center text-slate-400">
+                  <TableCell colSpan={18} className="h-32 text-center text-slate-400">
                     暂无数据
                   </TableCell>
                 </TableRow>
@@ -376,7 +385,21 @@ export default function ComicList() {
                         <ProgressCell done={b.chapterCount ?? 0} total={b.chapterCount ?? 0} />
                       </TableCell>
                       <TableCell className="text-center tabular-nums">
-                        <ProgressCell done={b.imageDoneCount ?? 0} total={b.chapterCount ?? 0} />
+                        <ProgressCell
+                          done={b.downloadedImageCount ?? 0}
+                          total={b.totalImageCount ?? 0}
+                        />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {b.pendingChapterCount === 0 && (b.imageDoneCount ?? 0) > 0 ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                            ✔ 已完成
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400">
+                            待 {b.pendingChapterCount ?? 0} 章
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <span

@@ -35,7 +35,14 @@ crawler:
     proxy-port: 10808
     list-request-interval-ms: 800
     detail-request-interval-ms: 1500
+    # 图片下载配置
+    download-dir: ./downloads
+    download-thread-pool-size: 8
+    max-concurrent-downloads: 16
+    download-retry-times: 3
+    download-request-interval-ms: 50
 
 logging:
   level:
     com.man3: info
+    com.man3.mapper: debug

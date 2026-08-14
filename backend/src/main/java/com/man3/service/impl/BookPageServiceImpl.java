@@ -2,8 +2,11 @@ package com.man3.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.man3.entity.BookPage;
+import com.man3.entity.Chapter;
 import com.man3.mapper.BookPageMapper;
+import com.man3.mapper.ChapterMapper;
 import com.man3.service.BookPageService;
+import com.man3.service.BookService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -21,9 +24,14 @@ import java.util.Set;
 public class BookPageServiceImpl implements BookPageService {
 
     private final BookPageMapper bookPageMapper;
+    private final ChapterMapper chapterMapper;
+    private final BookService bookService;
 
-    public BookPageServiceImpl(BookPageMapper bookPageMapper) {
+    public BookPageServiceImpl(BookPageMapper bookPageMapper, ChapterMapper chapterMapper,
+                               BookService bookService) {
         this.bookPageMapper = bookPageMapper;
+        this.chapterMapper = chapterMapper;
+        this.bookService = bookService;
     }
 
     @Override
@@ -70,6 +78,14 @@ public class BookPageServiceImpl implements BookPageService {
             }
         }
         log.info("同步图片完成 chapterId={}, 新增{}条, 共{}页", chapterId, insert, imgUrls.size());
+
+        // 图片入库后, 更新主表冗余计数字段(图片总数)
+        if (insert > 0) {
+            Chapter ch = chapterMapper.selectById(chapterId);
+            if (ch != null && ch.getBookId() != null) {
+                bookService.refreshCounters(ch.getBookId());
+            }
+        }
     }
 
     @Override

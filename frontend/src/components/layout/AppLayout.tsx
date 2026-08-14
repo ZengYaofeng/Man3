@@ -8,6 +8,8 @@ import {
   Settings,
   Bug,
   ChevronRight,
+  Globe,
+  Repeat,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -33,6 +35,13 @@ const NAV: NavGroup[] = [
     items: [
       { to: '/comics', label: '漫画列表', icon: ListFilter },
       { to: '/chapters', label: '章节列表', icon: BookOpen },
+    ],
+  },
+  {
+    title: '站点来源',
+    items: [
+      { to: '/sites', label: '站点列表', icon: Globe },
+      { to: '/dedup', label: '全站查重', icon: Repeat },
     ],
   },
   {
@@ -123,27 +132,43 @@ export default function AppLayout() {
 
       {/* 主区域 */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-6">
-          <BookOpen className="size-5 text-indigo-500" />
-          <div>
-            <h1 className="text-base font-semibold text-slate-800">漫画管理</h1>
-            <p className="text-xs text-slate-400">管理已爬取的漫画主表数据</p>
-          </div>
-          <div className="ml-auto flex items-center gap-3">
-            <div className="hidden items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm text-slate-500 sm:flex">
-              <span className="size-2 rounded-full bg-emerald-500" />
-              爬虫服务正常
-            </div>
-            <div className="flex size-9 items-center justify-center rounded-full bg-indigo-500 text-sm font-medium text-white">
-              管
-            </div>
-          </div>
-        </header>
-
+        <HeaderTitle />
         <main className="flex-1 overflow-y-auto p-6">
           <Outlet />
         </main>
       </div>
     </div>
+  )
+}
+
+function HeaderTitle() {
+  const { pathname } = useLocation()
+  const map: Record<string, { icon: React.ComponentType<{ className?: string }>; title: string; sub: string }> = {
+    '/': { icon: LayoutDashboard, title: '仪表盘', sub: '爬虫系统运行概览' },
+    '/comics': { icon: BookOpen, title: '漫画列表', sub: '管理已爬取的漫画主表数据' },
+    '/chapters': { icon: BookOpen, title: '章节列表', sub: '管理漫画章节数据' },
+    '/sites': { icon: Globe, title: '站点列表', sub: '管理漫画来源站点（增删改查）' },
+    '/dedup': { icon: Repeat, title: '全站查重', sub: '比对漫画表中未匹配的漫画名称' },
+    '/crawl/progress': { icon: Bot, title: '爬取进度', sub: '实时爬虫运行监控' },
+  }
+  const cfg = map[pathname] ?? map['/']
+  const Icon = cfg.icon
+  return (
+    <header className="flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-6">
+      <Icon className="size-5 text-indigo-500" />
+      <div>
+        <h1 className="text-base font-semibold text-slate-800">{cfg.title}</h1>
+        <p className="text-xs text-slate-400">{cfg.sub}</p>
+      </div>
+      <div className="ml-auto flex items-center gap-3">
+        <div className="hidden items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm text-slate-500 sm:flex">
+          <span className="size-2 rounded-full bg-emerald-500" />
+          爬虫服务正常
+        </div>
+        <div className="flex size-9 items-center justify-center rounded-full bg-indigo-500 text-sm font-medium text-white">
+          管
+        </div>
+      </div>
+    </header>
   )
 }

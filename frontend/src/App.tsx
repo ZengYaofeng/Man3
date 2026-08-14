@@ -4,6 +4,8 @@ import Dashboard from '@/pages/Dashboard'
 import ComicList from '@/pages/ComicList'
 import CrawlProgress from '@/pages/CrawlProgress'
 import ChapterList from '@/pages/ChapterList'
+import SiteList from '@/pages/SiteList'
+import SiteDedup from '@/pages/SiteDedup'
 
 export default function App() {
   return (
@@ -13,6 +15,8 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="comics" element={<ComicList />} />
           <Route path="chapters" element={<ChapterList />} />
+          <Route path="sites" element={<SiteList />} />
+          <Route path="dedup" element={<SiteDedup />} />
           <Route path="crawl/progress" element={<CrawlProgress />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

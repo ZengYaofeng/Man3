@@ -162,6 +162,18 @@ export interface CrawlStatus {
     progress: number
     lastCrawlTime: string | null
   }
+  image: {
+    running: boolean
+    pending: number
+    done: number
+    failed: number
+    totalCh: number
+    processed: number
+    progress: number       // 章节进度(%)
+    successRate: number
+    bookPageCount: number   // 已入库图片数(实时更新)
+    imgProgress: number     // 图片进度(%)
+  }
 }
 
 /** 实时爬取进度（仪表盘/进度页轮询）
@@ -170,6 +182,22 @@ export async function fetchCrawlStatus(): Promise<CrawlStatus> {
   const resp = await fetch('/api/crawl/status')
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
   return (await resp.json()) as CrawlStatus
+}
+
+/** 停止全部爬虫（详情/列表/图片，当前批次结束后停止） */
+export async function stopCrawl(): Promise<string> {
+  const resp = await fetch('/api/crawl/stop')
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const json = await resp.json()
+  return json.message || '已发送停止指令'
+}
+
+/** 启动图片爬虫（全量断点续爬，后台异步执行，立即返回） */
+export async function startImageCrawl(): Promise<string> {
+  const resp = await fetch('/api/crawl/image/start')
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const json = await resp.json()
+  return json.message || '已提交'
 }
 
 /** 触发详情爬虫（后台异步执行，立即返回） */
@@ -181,18 +209,35 @@ export async function startDetailCrawl(limit?: number): Promise<string> {
   return json.message || '已提交'
 }
 
-/** 统计概览（仪表盘用） */
-export async function fetchOverview() {
+/** 统计概览（仪表盘用）
+ *  真实数据来自 /api/book/stats:
+ *  { bookCount, chapterCount, totalImageCount, downloadedImageCount, doneCount, failedCount }
+ *  后端不可用时自动降级到本地 mock 数据，保证页面可演示。
+ */
+export interface Overview {
+  bookCount: number
+  chapterCount: number
+  totalImageCount: number
+  downloadedImageCount: number
+  doneCount: number
+  failedCount: number
+}
+
+export async function fetchOverview(): Promise<Overview> {
   try {
-    const resp = await fetch('/api/book/list?page=1&pageSize=1')
+    const resp = await fetch('/api/book/stats')
     if (resp.ok) {
       const json = await resp.json()
-      return {
-        bookCount: json.data?.total ?? 0,
-        chapterCount: 0,
-        bookPageCount: 0,
-        doneCount: 0,
-        failedCount: 0,
+      if (json.code === 0 && json.data) {
+        const d = json.data
+        return {
+          bookCount: d.bookCount ?? 0,
+          chapterCount: d.chapterCount ?? 0,
+          totalImageCount: d.totalImageCount ?? 0,
+          downloadedImageCount: d.downloadedImageCount ?? 0,
+          doneCount: d.doneCount ?? 0,
+          failedCount: d.failedCount ?? 0,
+        }
       }
     }
   } catch {
@@ -201,10 +246,14 @@ export async function fetchOverview() {
   await sleep(200)
   const done = MOCK_BOOKS.filter((b) => b.crawlStatus === 3).length
   const failed = MOCK_BOOKS.filter((b) => b.crawlStatus === -1).length
+  const chapterCount = MOCK_BOOKS.length * 42
+  const totalImg = chapterCount * 11
+  const downloaded = Math.floor(totalImg * 0.7)
   return {
     bookCount: MOCK_BOOKS.length,
-    chapterCount: MOCK_BOOKS.length * 42,
-    bookPageCount: MOCK_BOOKS.length * 42 * 11,
+    chapterCount,
+    totalImageCount: totalImg,
+    downloadedImageCount: downloaded,
     doneCount: done,
     failedCount: failed,
   }

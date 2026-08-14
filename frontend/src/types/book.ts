@@ -41,6 +41,12 @@ export interface Book {
   chapterCount?: number
   /** 图片已爬取的章节数(非持久化, 由章节表聚合) */
   imageDoneCount?: number
+  /** 待爬章节数(非持久化, 由章节表聚合) */
+  pendingChapterCount?: number
+  /** 该漫画总图片张数(非持久化, 由 book_page 聚合) */
+  totalImageCount?: number
+  /** 该漫画已下载(入库)图片张数(非持久化, 由 book_page 聚合) */
+  downloadedImageCount?: number
 }
 
 // 爬取状态枚举（与后端 crawlStatus 字段对应）
@@ -65,8 +71,19 @@ export function getCrawlStatus(value: number) {
 // 连载状态选项
 export const SERIAL_STATUS_OPTIONS = ['连载中', '已完结']
 
-export type SortField = 'id' | 'clicks' | 'score' | 'updatedAt' | 'chapter' | 'image'
+export type SortField = 'id' | 'clicks' | 'score' | 'updatedAt' | 'chapter' | 'image' | 'image_done'
 export type SortOrder = 'asc' | 'desc'
+
+/** 排序字段中文标签 */
+export const SORT_LABELS: Record<SortField, string> = {
+  id: 'ID',
+  clicks: '点击量',
+  score: '评分',
+  updatedAt: '更新时间',
+  chapter: '章节进度',
+  image: '图片进度',
+  image_done: '图片入库完成',
+}
 
 export function formatDateTime(value?: string | null): string {
   if (!value) return '-'

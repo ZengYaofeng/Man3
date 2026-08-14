@@ -42,6 +42,13 @@ public interface ChapterService {
     long countAll();
 
     /**
+     * 按图片爬取状态统计章节数量
+     *
+     * @param status 图片爬取状态: 0-未爬 2-图片完成 -1-失败
+     */
+    long countByImageStatus(int status);
+
+    /**
      * 查询图片未爬取的章节(按ID升序, 保证稳定)
      *
      * @param limit 最多返回条数, <=0 表示不限
@@ -70,4 +77,30 @@ public interface ChapterService {
         public long totalCh;
         public long imageDone;
     }
+
+    /**
+     * 图片进度聚合结果
+     */
+    class ImageStats {
+        public long totalImage;       // 已抓取入库的图片张数(book_page 记录数)
+        public long declaredImage;    // 章节声明的图片总数(image_count 之和)
+    }
+
+    /**
+     * 批量统计每本漫画的图片总数与已入库图片数
+     *
+     * @param bookIds 漫画ID列表
+     * @return key=bookId, value={totalImage, declaredImage}
+     */
+    java.util.Map<Long, ImageStats> batchImageStats(List<Long> bookIds);
+
+    /** 已爬章节（crawl_status IN (1,2)）的 image_count 之和 */
+    long sumImageCountCrawled();
+
+    /**
+     * 批量将指定章节标记为"图片处理中"(防止并发工作线程重复领取)
+     *
+     * @param ids 章节ID列表
+     */
+    void markImageProcessing(List<Long> ids);
 }
