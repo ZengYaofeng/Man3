@@ -164,13 +164,12 @@ export interface CrawlStatus {
   }
 }
 
-/** 实时爬取进度（仪表盘/进度页轮询） */
+/** 实时爬取进度（仪表盘/进度页轮询）
+ *  注意: /api/crawl/* 接口返回的是裸对象(无 {code,data} 包装), 直接取 body */
 export async function fetchCrawlStatus(): Promise<CrawlStatus> {
   const resp = await fetch('/api/crawl/status')
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-  const json = await resp.json()
-  if (json.code !== 0) throw new Error(json.message || '业务错误')
-  return json.data as CrawlStatus
+  return (await resp.json()) as CrawlStatus
 }
 
 /** 触发详情爬虫（后台异步执行，立即返回） */
