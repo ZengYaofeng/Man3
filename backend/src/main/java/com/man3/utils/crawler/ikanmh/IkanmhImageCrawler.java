@@ -109,6 +109,16 @@ public class IkanmhImageCrawler {
         public volatile long currentImageCount = 0;
     }
 
+    /** 单本图片入库的最终结果, 供批量调度和审计日志使用。 */
+    public static class CrawlRunResult {
+        public boolean started;
+        public long total;
+        public long success;
+        public long fail;
+        public long durationMillis;
+        public String message;
+    }
+
     /** 追加一条日志(按 bookId 维度) */
     private static void appendLog(long bookId, String level, String msg) {
         LOG_BUFFER.computeIfAbsent(bookId, k -> Collections.synchronizedList(new ArrayList<>()))
@@ -419,16 +429,23 @@ public class IkanmhImageCrawler {
      *
      * @param bookId 漫画ID
      */
-    public void crawlImagesForBook(Long bookId) {
+    public CrawlRunResult crawlImagesForBook(Long bookId) {
+        CrawlRunResult result = new CrawlRunResult();
+        long startedAt = System.currentTimeMillis();
         if (bookId == null) {
             log.warn("单本图片入库: bookId 为空, 忽略");
-            return;
+            result.message = "bookId 为空";
+            result.durationMillis = System.currentTimeMillis() - startedAt;
+            return result;
         }
         if (!acquireRun()) {
             log.warn("图片爬虫已在运行中, 忽略重复启动(单本 bookId={})", bookId);
             appendLog(bookId, "WARN", "爬虫已在运行中, 本次入库被忽略");
-            return;
+            result.message = "图片爬虫正在运行";
+            result.durationMillis = System.currentTimeMillis() - startedAt;
+            return result;
         }
+        result.started = true;
         // 重置该漫画的日志与进度快照
         resetForBook(bookId);
         CrawlProgressSnapshot snap = PROGRESS_MAP.computeIfAbsent(bookId, k -> new CrawlProgressSnapshot());
@@ -448,6 +465,13 @@ public class IkanmhImageCrawler {
         failCount.set(0);
         claimed.clear();
 
+        // 回收上次异常退出遗留的处理中章节，保证批量任务可以继续处理它们。
+        try {
+            chapterMapper.resetStuckProcessingChapters(java.util.Collections.singletonList(bookId));
+        } catch (Exception e) {
+            log.warn("单本图片入库: 重置遗留处理中章节失败 bookId={}: {}", bookId, e.getMessage());
+        }
+
         // 初始化并发章节处理线程池(单本爬虫需要, 不能与全量共享未初始化的引用)
         int chapterConcurrency = Math.max(1, props.getMaxConcurrentDownloads());
         chapterPool = Executors.newFixedThreadPool(chapterConcurrency,
@@ -461,6 +485,7 @@ public class IkanmhImageCrawler {
         // 判定标准: 章节没有 book_page, 或存在 img_url 缺失的图片(不依赖 crawl_status 标记, 避免脏状态导致漏爬)
         int totalPending = chapterService.countPendingImageChapters(bookId);
         snap.total = totalPending;
+        result.total = totalPending;
 
         log.info("单本图片入库启动: bookId={}, 待爬章节={}", bookId, totalPending);
         appendLog(bookId, "INFO", "▶ 单本图片入库启动: bookId=" + bookId + " 待爬章节=" + totalPending);
@@ -535,6 +560,11 @@ public class IkanmhImageCrawler {
             appendLog(bookId, "INFO",
                     "■ 单本图片入库结束: bookId=" + bookId + " 成功章节=" + snap.success + " 失败章节=" + snap.fail);
         }
+        result.success = snap.success;
+        result.fail = snap.fail;
+        result.durationMillis = System.currentTimeMillis() - startedAt;
+        result.message = result.fail > 0 ? "存在处理失败章节" : "完成";
+        return result;
     }
 
     /** 刷新主表章节/图片计数(避免循环依赖, 直接走 mapper) */

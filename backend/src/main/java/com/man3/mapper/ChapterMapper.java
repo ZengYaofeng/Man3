@@ -126,6 +126,7 @@ public interface ChapterMapper extends BaseMapper<Chapter> {
      */
     @Select("SELECT COUNT(DISTINCT c.id) FROM chapter c " +
             "WHERE c.book_id = #{bookId} " +
+            "AND EXISTS (SELECT 1 FROM book_page p WHERE p.chapter_id = c.id) " +
             "AND NOT EXISTS (SELECT 1 FROM book_page p WHERE p.chapter_id = c.id " +
             "AND (p.img_url IS NULL OR p.img_url = ''))")
     int countImageDoneChapters(@Param("bookId") Long bookId);

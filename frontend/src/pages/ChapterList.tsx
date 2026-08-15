@@ -240,7 +240,6 @@ export default function ChapterList() {
                 </TableRow>
               ) : (
                 data.map((b) => {
-                  const cs = getCrawlStatus(b.crawlStatus)
                   const open = !!expanded[b.id]
                   const st = expanded[b.id]
                   const chPages = chapterTotalPages(b.id)

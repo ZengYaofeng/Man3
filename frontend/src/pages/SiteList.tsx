@@ -39,7 +39,6 @@ import {
   Link2,
   Image as ImageIcon,
   FileText,
-  StickyNote,
 } from 'lucide-react'
 import SiteFormDialog from '@/components/site/SiteFormDialog'
 import {

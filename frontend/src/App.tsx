@@ -7,6 +7,7 @@ import ChapterList from '@/pages/ChapterList'
 import SiteList from '@/pages/SiteList'
 import SiteDedup from '@/pages/SiteDedup'
 import InventoryHistory from '@/pages/InventoryHistory'
+import IngestLogList from '@/pages/IngestLogList'
 import MangaReaderPage from '@/pages/MangaReaderPage'
 import CrawlLogPage from '@/pages/CrawlLogPage'
 
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="sites" element={<SiteList />} />
           <Route path="dedup" element={<SiteDedup />} />
           <Route path="inventory" element={<InventoryHistory />} />
+          <Route path="ingest-logs" element={<IngestLogList />} />
           <Route path="crawl/progress" element={<CrawlProgress />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

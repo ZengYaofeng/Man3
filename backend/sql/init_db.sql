@@ -94,6 +94,34 @@ ALTER TABLE `book` ADD COLUMN IF NOT EXISTS `total_chapter_count` BIGINT DEFAULT
 ALTER TABLE `book` ADD COLUMN IF NOT EXISTS `total_image_count` BIGINT DEFAULT 0 COMMENT '冗余: 图片总数(由图片入库时同步更新)';
 
 -- 回填已有数据: 从 chapter / book_page 聚合计算
+-- ------------------------------------------------------------
+-- 单本漫画图片 URL 入库日志
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `ingest_log` (
+  `id`                    BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `batch_no`              VARCHAR(32)   NOT NULL                COMMENT '一键入库批次号',
+  `book_id`               BIGINT        NOT NULL                COMMENT '漫画主表ID',
+  `book_name`             VARCHAR(128)  DEFAULT NULL            COMMENT '漫画名称快照',
+  `status`                TINYINT       NOT NULL                COMMENT '1-进行中 2-完成 3-失败',
+  `crawl_status_before`   TINYINT       DEFAULT NULL            COMMENT '入库前主表状态',
+  `crawl_status_after`    TINYINT       DEFAULT NULL            COMMENT '入库后主表状态',
+  `total_chapter_count`   INT           NOT NULL DEFAULT 0       COMMENT '章节总数',
+  `pending_chapter_count` INT           NOT NULL DEFAULT 0       COMMENT '入库前待处理章节数',
+  `success_chapter_count` INT           NOT NULL DEFAULT 0       COMMENT '本次成功章节数',
+  `failed_chapter_count`  INT           NOT NULL DEFAULT 0       COMMENT '本次失败章节数',
+  `image_count`           BIGINT        NOT NULL DEFAULT 0       COMMENT '入库后图片URL总数',
+  `start_time`            DATETIME      NOT NULL                COMMENT '开始时间',
+  `end_time`              DATETIME      DEFAULT NULL            COMMENT '结束时间',
+  `duration_seconds`      BIGINT        DEFAULT NULL            COMMENT '耗时(秒)',
+  `error_message`         VARCHAR(1000) DEFAULT NULL            COMMENT '失败原因',
+  `created_at`            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_batch_no` (`batch_no`),
+  KEY `idx_book_id` (`book_id`),
+  KEY `idx_status_created` (`status`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='漫画图片URL入库日志';
+
 UPDATE `book` b SET
     `total_chapter_count` = (SELECT COUNT(*) FROM `chapter` c WHERE c.`book_id` = b.`id`),
     `total_image_count` = (
