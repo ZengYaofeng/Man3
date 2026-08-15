@@ -1,6 +1,7 @@
 package com.man3.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.man3.entity.Chapter;
@@ -177,12 +178,15 @@ public class ChapterServiceImpl implements ChapterService {
     @Override
     public void updateImageResult(Long chapterId, int imageCount, boolean success) {
         Chapter update = new Chapter();
-        update.setId(chapterId);
         update.setImageCount(imageCount);
         update.setCrawlStatus(success ? IkanmhConstants.STATUS_IMAGE_DONE : IkanmhConstants.STATUS_FAILED);
         update.setCrawlTime(LocalDateTime.now());
         update.setUpdatedAt(LocalDateTime.now());
-        chapterMapper.updateById(update);
+        // Only the worker which still owns the processing state may publish a result.
+        // A delayed duplicate must never overwrite a chapter already finalized by another worker.
+        chapterMapper.update(update, new LambdaUpdateWrapper<Chapter>()
+                .eq(Chapter::getId, chapterId)
+                .eq(Chapter::getCrawlStatus, IkanmhConstants.STATUS_IMAGE_PROCESSING));
     }
 
     @Override

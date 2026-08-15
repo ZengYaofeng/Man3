@@ -281,9 +281,9 @@ export default function MangaReaderPage() {
             <span>本章暂无图片数据</span>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2">
+          <div className="flex flex-col items-center gap-0">
             {pages.map((p) => (
-              <figure key={p.id} className="w-full">
+              <figure key={p.id} className="m-0 w-full">
                 <img
                   src={p.imgUrl}
                   alt={`第${p.pageNo}页`}
@@ -291,9 +291,6 @@ export default function MangaReaderPage() {
                   className="mx-auto block w-full bg-white"
                   referrerPolicy="no-referrer"
                 />
-                <figcaption className="py-1 text-center text-xs text-slate-400">
-                  {p.pageNo}
-                </figcaption>
               </figure>
             ))}
           </div>
