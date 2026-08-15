@@ -153,6 +153,28 @@ public class ChapterServiceImpl implements ChapterService {
     }
 
     @Override
+    public List<Chapter> listUncrawledImagesForBook(Long bookId, int limit) {
+        LambdaQueryWrapper<Chapter> wrapper = new LambdaQueryWrapper<Chapter>()
+                .eq(Chapter::getBookId, bookId)
+                .eq(Chapter::getCrawlStatus, 0)
+                .orderByAsc(Chapter::getId);
+        if (limit > 0) {
+            wrapper.last("LIMIT " + limit);
+        }
+        return chapterMapper.selectList(wrapper);
+    }
+
+    @Override
+    public int countPendingImageChapters(Long bookId) {
+        return chapterMapper.countPendingImageChapters(bookId);
+    }
+
+    @Override
+    public List<Chapter> listPendingImageChaptersForBook(Long bookId, int limit) {
+        return chapterMapper.listPendingImageChaptersForBook(bookId, limit);
+    }
+
+    @Override
     public void updateImageResult(Long chapterId, int imageCount, boolean success) {
         Chapter update = new Chapter();
         update.setId(chapterId);

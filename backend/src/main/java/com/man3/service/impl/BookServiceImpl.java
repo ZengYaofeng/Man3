@@ -123,10 +123,10 @@ public class BookServiceImpl implements BookService {
     @Override
     public IPage<Book> pageQuery(int page, int pageSize, String keyword, String region,
                                  String status, String tag, String sortField, String sortDir,
-                                 Integer crawlStatus) {
+                                 Integer ingestStatus) {
         // 排序字段白名单, 防止非法值导致 SQL 注入(配合下方 switch 使用实体属性, 不拼接字符串)
         // chapter/image 走内存进度排序, 也需在白名单内以免被重置为 created_at
-        Set<String> allowedSort = new HashSet<>(Arrays.asList("score", "update_time", "clicks", "created_at", "crawl_time", "id", "chapter", "image", "image_done"));
+        Set<String> allowedSort = new HashSet<>(Arrays.asList("score", "update_time", "clicks", "created_at", "crawl_time", "id", "chapter", "image", "image_done", "chapterCount"));
         if (!allowedSort.contains(sortField)) {
             sortField = "created_at";
         }
@@ -147,8 +147,23 @@ public class BookServiceImpl implements BookService {
         if (StringUtils.hasText(tag)) {
             wrapper.like(Book::getTags, tag);
         }
-        if (crawlStatus != null) {
-            wrapper.eq(Book::getCrawlStatus, crawlStatus);
+        // 入库状态筛选(基于漫画主表 crawl_status):
+        //  0=未入库(null/0/1)  1=入库中(5 处理中)  2=已入库(2/3 图片已爬取/全部完成)
+        if (ingestStatus != null) {
+            switch (ingestStatus) {
+                case 0:
+                    wrapper.and(w -> w.isNull(Book::getCrawlStatus)
+                            .or().in(Book::getCrawlStatus, 0, 1));
+                    break;
+                case 1:
+                    wrapper.eq(Book::getCrawlStatus, 5);
+                    break;
+                case 2:
+                    wrapper.in(Book::getCrawlStatus, 2, 3);
+                    break;
+                default:
+                    break;
+            }
         }
         // 章节进度/图片进度/图片入库完成排序无法在 book 表直接 ORDER BY(聚合字段在 chapter 表),
         // 因此这几类排序改为: 先按其它可索引字段分页, 查询后填充聚合字段并在内存重排本页
@@ -177,6 +192,10 @@ public class BookServiceImpl implements BookService {
             case "image_done":
                 // 进度类排序: 先用 id 兜底分页, 内存再按完成度重排
                 wrapper.orderBy(true, true, Book::getId);
+                break;
+            case "chapterCount":
+                // 入库进度列: 直接按章节总数(冗余字段)排序
+                wrapper.orderBy(true, asc, Book::getTotalChapterCount);
                 break;
             default:
                 wrapper.orderBy(true, asc, Book::getCreatedAt);

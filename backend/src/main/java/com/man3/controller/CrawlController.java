@@ -11,9 +11,12 @@ import com.man3.utils.crawler.ikanmh.IkanmhListCrawler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
@@ -100,6 +103,44 @@ public class CrawlController {
         return map;
     }
 
+    /** 单本漫画图片入库的实时进度(已处理/总章节/成功/失败/当前章节) */
+    @GetMapping("/image/progress")
+    public Map<String, Object> imageProgress(@RequestParam Long bookId) {
+        IkanmhImageCrawler.CrawlProgressSnapshot snap =
+                imageCrawler.getProgress(bookId);
+        Map<String, Object> map = new HashMap<>();
+        map.put("bookId", bookId);
+        map.put("running", snap.running);
+        map.put("total", snap.total);
+        map.put("processed", snap.processed);
+        map.put("success", snap.success);
+        map.put("fail", snap.fail);
+        map.put("currentChapter", snap.currentChapter == null ? "" : snap.currentChapter);
+        map.put("currentImageCount", snap.currentImageCount);
+        map.put("progress",
+                snap.total > 0 ? Math.round((double) snap.processed * 100.0 / snap.total) : 0);
+        return map;
+    }
+
+    /** 单本漫画图片入库的控制台风格日志(返回最近若干条) */
+    @GetMapping("/image/log")
+    public Map<String, Object> imageLog(@RequestParam Long bookId) {
+        List<IkanmhImageCrawler.CrawlLogEntry> logs = imageCrawler.getLogs(bookId);
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (IkanmhImageCrawler.CrawlLogEntry e : logs) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("ts", e.ts);
+            item.put("level", e.level);
+            item.put("msg", e.msg);
+            list.add(item);
+        }
+        Map<String, Object> map = new HashMap<>();
+        map.put("bookId", bookId);
+        map.put("running", imageCrawler.getProgress(bookId).running);
+        map.put("logs", list);
+        return map;
+    }
+
     private static long toLong(Object o) {
         if (o == null) {
             return 0L;
@@ -163,6 +204,23 @@ public class CrawlController {
         Map<String, Object> map = new HashMap<>();
         map.put("code", 0);
         map.put("message", "图片爬取任务已提交, 后台异步执行中(断点续爬)");
+        return map;
+    }
+
+    /** 单本漫画图片入库: 仅爬取指定漫画的未爬章节(异步执行, 立即返回) */
+    @GetMapping("/image/book")
+    public Map<String, Object> crawlImageBook(@RequestParam Long bookId) {
+        log.info("收到单本图片入库任务, bookId={}", bookId);
+        if (IkanmhImageCrawler.running) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("code", 1);
+            map.put("message", "爬虫已在运行中, 请稍后再试");
+            return map;
+        }
+        CompletableFuture.runAsync(() -> imageCrawler.crawlImagesForBook(bookId));
+        Map<String, Object> map = new HashMap<>();
+        map.put("code", 0);
+        map.put("message", "单本图片入库任务已提交, 后台异步执行中");
         return map;
     }
 

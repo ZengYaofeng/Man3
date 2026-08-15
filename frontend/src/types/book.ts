@@ -49,19 +49,26 @@ export interface Book {
   downloadedImageCount?: number
 }
 
-// 爬取状态枚举（与后端 crawlStatus 字段对应）
+// 入库状态枚举（基于后端 book.crawl_status 判断）
+// 0=未入库(null/0/1)  1=入库中(5)  2=已入库(2/3)
 export const CRAWL_STATUS_OPTIONS = [
-  { value: -1, label: '失败', className: 'bg-red-100 text-red-700' },
-  { value: 0, label: '未爬取', className: 'bg-slate-100 text-slate-600' },
-  { value: 1, label: '章节已爬取', className: 'bg-blue-100 text-blue-700' },
-  { value: 2, label: '图片已爬取', className: 'bg-indigo-100 text-indigo-700' },
-  { value: 3, label: '全部完成', className: 'bg-emerald-100 text-emerald-700' },
+  { value: 0, label: '未入库', className: 'bg-slate-100 text-slate-600' },
+  { value: 1, label: '入库中', className: 'bg-amber-100 text-amber-700' },
+  { value: 2, label: '已入库', className: 'bg-emerald-100 text-emerald-700' },
 ] as const
 
 export function getCrawlStatus(value: number) {
+  let status = 2
+  if (value == null || value === 0 || value === 1) {
+    status = 0
+  } else if (value === 5) {
+    status = 1
+  } else if (value === 2 || value === 3) {
+    status = 2
+  }
   return (
-    CRAWL_STATUS_OPTIONS.find((o) => o.value === value) ?? {
-      value,
+    CRAWL_STATUS_OPTIONS.find((o) => o.value === status) ?? {
+      value: status,
       label: '未知',
       className: 'bg-slate-100 text-slate-600',
     }
@@ -71,7 +78,7 @@ export function getCrawlStatus(value: number) {
 // 连载状态选项
 export const SERIAL_STATUS_OPTIONS = ['连载中', '已完结']
 
-export type SortField = 'id' | 'clicks' | 'score' | 'updatedAt' | 'chapter' | 'image' | 'image_done' | 'inventory'
+export type SortField = 'id' | 'clicks' | 'score' | 'updatedAt' | 'chapter' | 'image' | 'image_done' | 'inventory' | 'chapterCount'
 export type SortOrder = 'asc' | 'desc'
 
 /** 排序字段中文标签 */
@@ -84,6 +91,7 @@ export const SORT_LABELS: Record<SortField, string> = {
   image: '图片进度',
   image_done: '图片入库完成',
   inventory: '已入库时间',
+  chapterCount: '章节数量',
 }
 
 export function formatDateTime(value?: string | null): string {

@@ -92,4 +92,13 @@ public class BookPageServiceImpl implements BookPageService {
     public long countAll() {
         return bookPageMapper.selectCount(null);
     }
+
+    @Override
+    public long countByChapterIds(List<Long> chapterIds) {
+        if (chapterIds == null || chapterIds.isEmpty()) {
+            return 0L;
+        }
+        return bookPageMapper.selectCount(
+                new LambdaQueryWrapper<BookPage>().in(BookPage::getChapterId, chapterIds));
+    }
 }

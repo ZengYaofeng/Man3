@@ -26,8 +26,8 @@ public class BookQueryDTO {
     /** 标签筛选(模糊匹配) */
     private String tag;
 
-    /** 爬取状态筛选(0=未爬, 1=章节完成, 2=图片完成, 3=完成) */
-    private Integer crawlStatus;
+    /** 入库状态筛选(0=未入库, 1=入库中, 2=已入库); 基于漫画主表 crawl_status 判断 */
+    private Integer ingestStatus;
 
     /** 排序字段: score(评分) | updateTime(更新时间) | clicks(点击量) | createdAt(创建时间) | crawlTime(入库完成时间) */
     private String sortField = "createdAt";

@@ -1,7 +1,9 @@
 package com.man3.utils.crawler.ikanmh;
 
 import com.man3.config.IkanmhProperties;
+import com.man3.entity.Book;
 import com.man3.entity.Chapter;
+import com.man3.mapper.BookMapper;
 import com.man3.mapper.ChapterMapper;
 import com.man3.service.BookPageService;
 import com.man3.service.ChapterService;
@@ -60,6 +62,7 @@ public class IkanmhImageCrawler {
     private final ChapterService chapterService;
     private final ChapterMapper chapterMapper;
     private final BookPageService bookPageService;
+    private final BookMapper bookMapper;
 
     /** 并发章节处理线程池(每章仅 1 次章节页请求, 不逐图请求源站) */
     private ExecutorService chapterPool;
@@ -71,14 +74,80 @@ public class IkanmhImageCrawler {
     /** 正在处理中(已领取未完成的)的章节ID, 用于避免同一章被重复处理 */
     private final Map<Long, Boolean> claimed = new ConcurrentHashMap<>();
 
+    /** 内存爬虫日志: bookId -> 日志条目(控制台风格, 便于前端实时查看) */
+    private static final Map<Long, List<CrawlLogEntry>> LOG_BUFFER = new ConcurrentHashMap<>();
+    /** 每个 bookId 的实时计数(已处理章节/成功/失败/总章节) */
+    private static final Map<Long, CrawlProgressSnapshot> PROGRESS_MAP = new ConcurrentHashMap<>();
+    private static final int MAX_LOG_PER_BOOK = 500;
+
+    /** 全量爬虫的虚拟 bookId */
+    public static final long GLOBAL_BOOK_ID = -1L;
+
+    /** 日志条目 */
+    public static class CrawlLogEntry {
+        public final long ts;
+        public final String level;
+        public final String msg;
+        public CrawlLogEntry(long ts, String level, String msg) {
+            this.ts = ts;
+            this.level = level;
+            this.msg = msg;
+        }
+    }
+
+    /** 进度快照 */
+    public static class CrawlProgressSnapshot {
+        public volatile long total = 0;
+        public volatile long processed = 0;
+        public volatile long success = 0;
+        public volatile long fail = 0;
+        public volatile boolean running = false;
+        public volatile String currentChapter = "";
+        public volatile long currentImageCount = 0;
+    }
+
+    /** 追加一条日志(按 bookId 维度) */
+    private static void appendLog(long bookId, String level, String msg) {
+        LOG_BUFFER.computeIfAbsent(bookId, k -> Collections.synchronizedList(new ArrayList<>()))
+                .add(new CrawlLogEntry(System.currentTimeMillis(), level, msg));
+        List<CrawlLogEntry> list = LOG_BUFFER.get(bookId);
+        if (list.size() > MAX_LOG_PER_BOOK) {
+            list.subList(0, list.size() - MAX_LOG_PER_BOOK).clear();
+        }
+    }
+
+    /** 供控制器查询: 返回某 bookId 的最近日志 */
+    public List<CrawlLogEntry> getLogs(long bookId) {
+        List<CrawlLogEntry> list = LOG_BUFFER.get(bookId);
+        return list == null ? Collections.emptyList() : new ArrayList<>(list);
+    }
+
+    /** 供控制器查询: 返回某 bookId 的实时进度快照 */
+    public CrawlProgressSnapshot getProgress(long bookId) {
+        return PROGRESS_MAP.computeIfAbsent(bookId, k -> new CrawlProgressSnapshot());
+    }
+
+    /** 清空某 bookId 的日志与进度(新一轮入库前调用) */
+    private static void resetForBook(long bookId) {
+        LOG_BUFFER.remove(bookId);
+        CrawlProgressSnapshot snap = PROGRESS_MAP.computeIfAbsent(bookId, k -> new CrawlProgressSnapshot());
+        snap.total = 0;
+        snap.processed = 0;
+        snap.success = 0;
+        snap.fail = 0;
+        snap.currentChapter = "";
+        snap.currentImageCount = 0;
+    }
+
     public IkanmhImageCrawler(IkanmhProperties props, HttpClientUtils http,
                               ChapterService chapterService, ChapterMapper chapterMapper,
-                              BookPageService bookPageService) {
+                              BookPageService bookPageService, BookMapper bookMapper) {
         this.props = props;
         this.http = http;
         this.chapterService = chapterService;
         this.chapterMapper = chapterMapper;
         this.bookPageService = bookPageService;
+        this.bookMapper = bookMapper;
     }
 
     /** 请求外部停止(由控制器调用) */
@@ -144,7 +213,7 @@ public class IkanmhImageCrawler {
 
                 // 3) 提交给并发线程池处理各章节
                 for (Chapter ch : batch) {
-                    chapterPool.submit(() -> processChapter(ch));
+                    chapterPool.submit(() -> processChapter(ch, GLOBAL_BOOK_ID));
                 }
 
                 // 4) 控制生产节奏: 避免一次性把所有章节都标记为处理中占用过多内存,
@@ -169,17 +238,22 @@ public class IkanmhImageCrawler {
     }
 
     /** 处理单个章节: 解析阅读页图片URL, 并发解析尺寸并入库 */
-    private void processChapter(Chapter chapter) {
+    private void processChapter(Chapter chapter, long logBookId) {
+        CrawlProgressSnapshot snap = PROGRESS_MAP.computeIfAbsent(logBookId, k -> new CrawlProgressSnapshot());
+        String title = (chapter.getTitle() != null ? chapter.getTitle() : ("第" + chapter.getChapterNo() + "话"));
         try {
             if (stopFlag) {
                 return;
             }
             long t0 = System.currentTimeMillis();
             String url = props.getBaseUrl() + IkanmhConstants.CHAPTER_PATH + chapter.getSourceChapterId();
+            appendLog(logBookId, "INFO", "▶ 开始爬取章节: " + title + " [" + url + "]");
+            snap.currentChapter = title;
             Document doc = http.get(url);
             if (doc == null) {
                 // 源站访问失败(网络/限流), 回滚为待爬以便重试
                 log.warn("章节 {} 阅读页获取失败(回滚待爬): {}", chapter.getId(), url);
+                appendLog(logBookId, "WARN", "✗ 章节获取失败(网络/限流), 回滚待爬: " + title);
                 try {
                     Chapter rollback = new Chapter();
                     rollback.setCrawlStatus(IkanmhConstants.STATUS_NOT_CRAWLED);
@@ -190,6 +264,8 @@ public class IkanmhImageCrawler {
                     log.warn("回滚章节 {} 失败: {}", chapter.getId(), ex.getMessage());
                 }
                 failCount.incrementAndGet();
+                snap.fail++;
+                snap.processed++;
                 return;
             }
 
@@ -224,8 +300,11 @@ public class IkanmhImageCrawler {
 
             if (urls.isEmpty()) {
                 log.warn("章节 {} 未解析到图片(标记失败): {}", chapter.getId(), url);
+                appendLog(logBookId, "WARN", "✗ 未解析到图片, 标记失败: " + title);
                 chapterService.updateImageResult(chapter.getId(), 0, false);
                 failCount.incrementAndGet();
+                snap.fail++;
+                snap.processed++;
                 return;
             }
 
@@ -238,11 +317,16 @@ public class IkanmhImageCrawler {
             long cost = System.currentTimeMillis() - t0;
             doneCount.incrementAndGet();
             log.info("章节图片入库完成 id={} 图片数={} 耗时={}ms", chapter.getId(), n, cost);
+            appendLog(logBookId, "INFO", "✓ 章节完成: " + title + " 图片数=" + n + " 耗时=" + cost + "ms");
             chapterService.updateImageResult(chapter.getId(), n, true);
+            snap.success++;
+            snap.processed++;
+            snap.currentImageCount = n;
 
         } catch (Exception e) {
             // 网络/解析类异常: 源站抖动或临时不可达, 回滚为待爬以便后续重试, 避免污染数据
             log.warn("章节图片处理异常 id={} (回滚待爬): {}", chapter.getId(), e.getMessage());
+            appendLog(logBookId, "ERROR", "✗ 章节处理异常: " + title + " " + e.getMessage());
             try {
                 Chapter rollback = new Chapter();
                 rollback.setCrawlStatus(IkanmhConstants.STATUS_NOT_CRAWLED);
@@ -253,6 +337,8 @@ public class IkanmhImageCrawler {
                 log.warn("回滚章节 {} 失败: {}", chapter.getId(), ex.getMessage());
             }
             failCount.incrementAndGet();
+            snap.fail++;
+            snap.processed++;
         } finally {
             claimed.remove(chapter.getId());
         }
@@ -310,4 +396,182 @@ public class IkanmhImageCrawler {
     }
 
     private static final AtomicLong tSeq = new AtomicLong(0);
+
+    /**
+     * 单本漫画图片入库: 仅爬取指定漫画下 crawl_status=0 的章节。
+     * 复用全局 running 标志与并发处理流程(与全量爬虫互斥, 不会同时运行)。
+     * 完成后把图片齐全的章节置为已爬(status=1)并刷新主表计数。
+     *
+     * @param bookId 漫画ID
+     */
+    public void crawlImagesForBook(Long bookId) {
+        if (running) {
+            log.warn("图片爬虫已在运行中, 忽略重复启动(单本 bookId={})", bookId);
+            appendLog(bookId, "WARN", "爬虫已在运行中, 本次入库被忽略");
+            return;
+        }
+        if (bookId == null) {
+            log.warn("单本图片入库: bookId 为空, 忽略");
+            return;
+        }
+        // 重置该漫画的日志与进度快照
+        resetForBook(bookId);
+        CrawlProgressSnapshot snap = PROGRESS_MAP.computeIfAbsent(bookId, k -> new CrawlProgressSnapshot());
+        snap.running = true;
+
+        // 入库进行中, 先把漫画标记为"处理中"(5), 供列表"入库中"筛选; 收尾时由 refreshBookCounters 修正
+        try {
+            Book flag = new Book();
+            flag.setId(bookId);
+            flag.setCrawlStatus(IkanmhConstants.STATUS_IMAGE_PROCESSING);
+            bookMapper.updateById(flag);
+        } catch (Exception ignore) {
+        }
+
+        running = true;
+        stopFlag = false;
+        doneCount.set(0);
+        failCount.set(0);
+        claimed.clear();
+
+        // 初始化并发章节处理线程池(单本爬虫需要, 不能与全量共享未初始化的引用)
+        int chapterConcurrency = Math.max(1, props.getMaxConcurrentDownloads());
+        chapterPool = Executors.newFixedThreadPool(chapterConcurrency,
+                r -> {
+                    Thread t = new Thread(r, "img-book-" + bookId + "-" + tSeq.incrementAndGet());
+                    t.setDaemon(true);
+                    return t;
+                });
+
+        // 统计该漫画待爬(图片未真实入库)章节总数, 作为进度分母
+        // 判定标准: 章节没有 book_page, 或存在 img_url 缺失的图片(不依赖 crawl_status 标记, 避免脏状态导致漏爬)
+        int totalPending = chapterService.countPendingImageChapters(bookId);
+        snap.total = totalPending;
+
+        log.info("单本图片入库启动: bookId={}, 待爬章节={}", bookId, totalPending);
+        appendLog(bookId, "INFO", "▶ 单本图片入库启动: bookId=" + bookId + " 待爬章节=" + totalPending);
+        if (totalPending == 0) {
+            appendLog(bookId, "WARN",
+                    "该漫画待爬章节为 0: 图片已全部入库, 或需先运行【详情爬虫】补全章节. 本次无需爬取.");
+        }
+        try {
+            while (!stopFlag) {
+                // 仅拉取该漫画下图片未真实入库的章节(基于 book_page.img_url 判定)
+                List<Chapter> batch = chapterService.listPendingImageChaptersForBook(bookId, FETCH_BATCH);
+                if (batch.isEmpty()) {
+                    if (claimed.isEmpty()) {
+                        log.info("单本图片入库: 该漫画待处理章节已清空, 结束 bookId={}", bookId);
+                        break;
+                    }
+                    CrawlerUtils.sleep(PRODUCER_POLL_MS);
+                    continue;
+                }
+
+                List<Long> ids = new ArrayList<>(batch.size());
+                for (Chapter c : batch) {
+                    ids.add(c.getId());
+                    claimed.put(c.getId(), Boolean.TRUE);
+                }
+                chapterService.markImageProcessing(ids);
+
+                for (Chapter ch : batch) {
+                    chapterPool.submit(() -> processChapter(ch, bookId));
+                }
+
+                while (claimed.size() > FETCH_BATCH * 2 && !stopFlag) {
+                    CrawlerUtils.sleep(PRODUCER_POLL_MS);
+                }
+            }
+
+            while (!claimed.isEmpty() && !stopFlag) {
+                CrawlerUtils.sleep(PRODUCER_POLL_MS);
+            }
+
+            // 单本完成: 先把"处理中"残留且未真实入库的章节重置为未爬, 再把图片齐全的章节标记为已爬(status=1), 刷新主表计数
+            try {
+                log.info("单本图片入库收尾: 标记已爬章节并刷新计数 bookId={}", bookId);
+                try {
+                    chapterMapper.resetStuckProcessingChapters(java.util.Collections.singletonList(bookId));
+                } catch (Exception re) {
+                    log.warn("重置卡住的章节状态失败 bookId={}: {}", bookId, re.getMessage());
+                }
+                chapterMapper.markChaptersImageDone(java.util.Collections.singletonList(bookId));
+                refreshBookCounters(bookId);
+                appendLog(bookId, "INFO",
+                        "✓ 单本入库收尾完成: 标记已爬章节并刷新计数, 成功章节=" + snap.success + " 失败章节=" + snap.fail);
+            } catch (Exception e) {
+                log.warn("单本图片入库收尾失败 bookId={}: {}", bookId, e.getMessage());
+                appendLog(bookId, "ERROR", "收尾失败: " + e.getMessage());
+            }
+        } finally {
+            running = false;
+            snap.running = false;
+            snap.currentChapter = "";
+            if (chapterPool != null) {
+                chapterPool.shutdownNow();
+            }
+            log.info("单本图片入库结束: bookId={}, 成功章节={}, 失败章节={}",
+                    bookId, doneCount.get(), failCount.get());
+            appendLog(bookId, "INFO",
+                    "■ 单本图片入库结束: bookId=" + bookId + " 成功章节=" + snap.success + " 失败章节=" + snap.fail);
+        }
+    }
+
+    /** 刷新主表章节/图片计数(避免循环依赖, 直接走 mapper) */
+    private void refreshBookCounters(Long bookId) {
+        if (bookId == null) {
+            return;
+        }
+        Long chapterCount = chapterMapper.selectCount(
+                new LambdaQueryWrapper<Chapter>().eq(Chapter::getBookId, bookId));
+        List<Long> chapterIds = chapterMapper.selectList(
+                new LambdaQueryWrapper<Chapter>()
+                        .select(Chapter::getId)
+                        .eq(Chapter::getBookId, bookId))
+                .stream().map(Chapter::getId).collect(java.util.stream.Collectors.toList());
+        Long imageCount = 0L;
+        if (!chapterIds.isEmpty()) {
+            imageCount = bookPageService.countByChapterIds(chapterIds);
+        }
+        // 真实已入库(图片 url 全部就绪)的章节数
+        int imageDoneChapters = chapterMapper.countImageDoneChapters(bookId);
+        long done = chapterCount != null && chapterCount > 0 ? imageDoneChapters : 0;
+
+        Book bookUpdate = new Book();
+        bookUpdate.setId(bookId);
+        bookUpdate.setTotalChapterCount(chapterCount);
+        bookUpdate.setTotalImageCount(imageCount);
+        bookUpdate.setImageDoneCount(done);
+        bookUpdate.setPendingChapterCount(chapterCount == null ? 0 : chapterCount - done);
+
+        // 入库状态(基于真实图片 url): 全部章节图片就绪 -> 置 2(已入库);
+        // 原本已是"全部完成"(3)则保留; 入库中途(5)或部分失败则回到章节已爬取(1)
+        if (chapterCount != null && chapterCount > 0 && done == chapterCount) {
+            Book cur = bookMapper.selectById(bookId);
+            Integer cs = cur != null ? cur.getCrawlStatus() : null;
+            if (cs == null || cs <= 1) {
+                bookUpdate.setCrawlStatus(IkanmhConstants.STATUS_IMAGE_DONE);
+            } else {
+                // 2 或 3 保持原值, 不回退
+                Book keep = new Book();
+                keep.setId(bookId);
+                keep.setCrawlStatus(cs);
+                bookMapper.updateById(keep);
+            }
+        } else {
+            // 未全部就绪: 清除"入库中"(5), 回到"章节已爬取"(1)
+            Book cur = bookMapper.selectById(bookId);
+            Integer cs = cur != null ? cur.getCrawlStatus() : null;
+            if (cs != null && cs == 5) {
+                bookUpdate.setCrawlStatus(IkanmhConstants.STATUS_CHAPTER_DONE);
+            } else {
+                // 不改动原状态
+                Book keep = new Book();
+                keep.setId(bookId);
+                keep.setCrawlStatus(cs);
+                bookMapper.updateById(keep);
+            }
+        }
+        bookMapper.updateById(bookUpdate);
+    }
 }

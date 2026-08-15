@@ -56,6 +56,30 @@ public interface ChapterService {
     List<Chapter> listUncrawledImages(int limit);
 
     /**
+     * 查询指定漫画下图片未爬取的章节(按ID升序)
+     *
+     * @param bookId 漫画ID
+     * @param limit  最多返回条数, <=0 表示不限
+     */
+    List<Chapter> listUncrawledImagesForBook(Long bookId, int limit);
+
+    /**
+     * 统计指定漫画中"待爬(图片未真实入库)"的章节数
+     * 判定标准: 章节没有 book_page, 或存在 img_url 缺失的图片
+     *
+     * @param bookId 漫画ID
+     */
+    int countPendingImageChapters(Long bookId);
+
+    /**
+     * 查询指定漫画下"待爬(图片未真实入库)"的章节列表(按ID升序)
+     *
+     * @param bookId 漫画ID
+     * @param limit  最多返回条数, <=0 表示不限
+     */
+    List<Chapter> listPendingImageChaptersForBook(Long bookId, int limit);
+
+    /**
      * 更新章节图片爬取结果
      *
      * @param chapterId  章节ID

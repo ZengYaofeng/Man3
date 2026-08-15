@@ -1,5 +1,6 @@
 import { MOCK_BOOKS } from '@/data/mockBooks'
 import type { Book, SortField, SortOrder } from '@/types/book'
+import { getCrawlStatus } from '@/types/book'
 
 export interface BookQuery {
   page?: number
@@ -8,8 +9,8 @@ export interface BookQuery {
   region?: string
   status?: string
   tag?: string
-  /** 前端本地过滤（后端 BookQueryDTO 暂未支持该参数） */
-  crawlStatus?: number | null
+  /** 入库状态筛选(0=未入库, 1=入库中, 2=已入库); 后端按主表 crawl_status 映射 */
+  ingestStatus?: number | null
   sortBy?: SortField
   sortOrder?: SortOrder
 }
@@ -41,6 +42,7 @@ const SORT_FIELD_MAP: Record<SortField, string> = {
   chapter: 'chapter',
   image: 'image',
   inventory: 'crawlTime',
+  chapterCount: 'chapterCount',
 }
 
 /**
@@ -60,8 +62,8 @@ export async function fetchBooks(query: BookQuery = {}): Promise<BookPageResult>
   if (query.region && query.region !== 'all') params.set('region', query.region)
   if (query.status && query.status !== 'all') params.set('status', query.status)
   if (query.tag?.trim()) params.set('tag', query.tag.trim())
-  if (query.crawlStatus !== null && query.crawlStatus !== undefined) {
-    params.set('crawlStatus', String(query.crawlStatus))
+  if (query.ingestStatus !== null && query.ingestStatus !== undefined) {
+    params.set('ingestStatus', String(query.ingestStatus))
   }
   params.set('sortField', SORT_FIELD_MAP[sortBy] ?? 'createdAt')
   params.set('sortDir', sortOrder)
@@ -106,8 +108,8 @@ function fallbackMock(query: BookQuery, page: number, pageSize: number): BookPag
   if (query.status && query.status !== 'all') {
     list = list.filter((b) => b.status === query.status)
   }
-  if (query.crawlStatus !== null && query.crawlStatus !== undefined) {
-    list = list.filter((b) => b.crawlStatus === query.crawlStatus)
+  if (query.ingestStatus !== null && query.ingestStatus !== undefined) {
+    list = list.filter((b) => getCrawlStatus(b.crawlStatus).value === query.ingestStatus)
   }
   list.sort((a, b) => {
     let cmp = 0
@@ -210,6 +212,48 @@ export async function startDetailCrawl(limit?: number): Promise<string> {
   return json.message || '已提交'
 }
 
+/** 单本漫画图片入库（仅爬该漫画未爬章节，后台异步执行，立即返回） */
+export async function crawlImageBook(bookId: number): Promise<string> {
+  const resp = await fetch(`/api/crawl/image/book?bookId=${bookId}`)
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const json = await resp.json()
+  if (json.code && json.code !== 0) {
+    throw new Error(json.message || '提交失败')
+  }
+  return json.message || '已提交'
+}
+
+/** 单本漫画图片入库实时进度 */
+export interface ImageProgress {
+  bookId: number
+  running: boolean
+  total: number
+  processed: number
+  success: number
+  fail: number
+  currentChapter: string
+  currentImageCount: number
+  progress: number
+}
+export async function fetchImageProgress(bookId: number): Promise<ImageProgress> {
+  const resp = await fetch(`/api/crawl/image/progress?bookId=${bookId}`)
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  return resp.json()
+}
+
+export interface CrawlLogEntry {
+  ts: number
+  level: string
+  msg: string
+}
+/** 单本漫画图片入库的控制台风格日志 */
+export async function fetchImageLog(bookId: number): Promise<{ running: boolean; logs: CrawlLogEntry[] }> {
+  const resp = await fetch(`/api/crawl/image/log?bookId=${bookId}`)
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const json = await resp.json()
+  return { running: json.running, logs: json.logs || [] }
+}
+
 /** 统计概览（仪表盘用）
  *  真实数据来自 /api/book/stats:
  *  { bookCount, chapterCount, totalImageCount, downloadedImageCount, doneCount, failedCount }
@@ -298,6 +342,51 @@ export async function fetchChapters(
   const json = await resp.json()
   if (json.code !== 0) throw new Error(json.message || '业务错误')
   const data = json.data as ChapterPageResult
+  return { list: data.list ?? [], total: data.total ?? 0, page: data.page ?? 1, pageSize: data.pageSize ?? pageSize }
+}
+
+// ===================== 漫画阅读(章节图片) =====================
+
+/** 章节内单张图片 */
+export interface BookPage {
+  id: number
+  chapterId: number
+  /** 图片序号(从1开始, 阅读顺序) */
+  pageNo: number
+  imgUrl: string
+  fileSize?: number | null
+  imgWidth?: number | null
+  imgHeight?: number | null
+  downloadStatus?: number | null
+}
+
+export interface BookPageResult {
+  list: BookPage[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/**
+ * 分页查询某章节的图片(按 page_no 升序, 保证阅读顺序)
+ * @param chapterId 章节ID
+ * @param page 页码(从1开始)
+ * @param pageSize 每页图片数(默认10)
+ */
+export async function fetchBookPages(
+  chapterId: number,
+  page = 1,
+  pageSize = 10,
+): Promise<BookPageResult> {
+  const params = new URLSearchParams()
+  params.set('chapterId', String(chapterId))
+  params.set('page', String(page))
+  params.set('pageSize', String(pageSize))
+  const resp = await fetch(`/api/page/list?${params.toString()}`)
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const json = await resp.json()
+  if (json.code !== 0) throw new Error(json.message || '业务错误')
+  const data = json.data as BookPageResult
   return { list: data.list ?? [], total: data.total ?? 0, page: data.page ?? 1, pageSize: data.pageSize ?? pageSize }
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, Fragment } from 'react'
 import {
   Table,
   TableBody,
@@ -17,10 +17,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search, RefreshCw, ArrowUp, ArrowDown, ChevronsUpDown, Eye, ClipboardList } from 'lucide-react'
+import {
+  Search,
+  RefreshCw,
+  ArrowUp,
+  ArrowDown,
+  ChevronsUpDown,
+  Eye,
+  ClipboardList,
+  ChevronDown,
+  ChevronRight,
+  BookOpen,
+  Image as ImageIcon,
+  Terminal,
+  Loader2,
+  ArrowDownWideNarrow,
+  ArrowUpWideNarrow,
+} from 'lucide-react'
 import CoverImage from '@/components/comic/CoverImage'
 import ComicDetailDrawer from '@/components/comic/ComicDetailDrawer'
-import { fetchBooks, fetchBookOptions, runInventory, type BookOptions } from '@/lib/api'
+import {
+  fetchBooks,
+  fetchBookOptions,
+  fetchChapters,
+  runInventory,
+  crawlImageBook,
+  fetchImageProgress,
+  type BookOptions,
+  type Chapter,
+} from '@/lib/api'
 import {
   type Book,
   type SortField,
@@ -32,6 +57,16 @@ import {
 } from '@/types/book'
 
 const PAGE_SIZES = [10, 20, 50]
+const CHAPTER_PAGE_SIZE = 20
+
+interface ExpandState {
+  page: number
+  total: number
+  list: Chapter[]
+  loading: boolean
+  loaded: boolean
+  orderDir: 'asc' | 'desc'
+}
 
 function SortHeader({
   field,
@@ -72,7 +107,7 @@ export default function ComicList() {
   const [keyword, setKeyword] = useState('')
   const [region, setRegion] = useState('all')
   const [status, setStatus] = useState('all')
-  const [crawlStatus, setCrawlStatus] = useState('all')
+  const [ingestStatus, setIngestStatus] = useState('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [jumpValue, setJumpValue] = useState('')
@@ -84,6 +119,21 @@ export default function ComicList() {
   const [data, setData] = useState<Book[]>([])
   const [total, setTotal] = useState(0)
   const [selected, setSelected] = useState<Book | null>(null)
+  // 展开行的 bookId -> 章节分页状态
+  const [expanded, setExpanded] = useState<Record<number, ExpandState>>({})
+  // 正在单本入库的漫画: bookId -> 进度快照(实时来自后端 /api/crawl/image/progress)
+  const [ingesting, setIngesting] = useState<Record<
+    number,
+    {
+      startedAt: number
+      total: number
+      processed: number
+      success: number
+      fail: number
+      currentChapter: string
+      progress: number
+    }
+  >>({})
   const [options, setOptions] = useState<BookOptions>({
     regions: [],
     statuses: ['连载中', '已完结'],
@@ -93,6 +143,21 @@ export default function ComicList() {
   useEffect(() => {
     fetchBookOptions().then(setOptions)
   }, [])
+
+  const refreshBooks = useCallback(async () => {
+    const res = await fetchBooks({
+      page,
+      pageSize,
+      keyword,
+      region: region === 'all' ? undefined : region,
+      status: status === 'all' ? undefined : status,
+      ingestStatus: ingestStatus === 'all' ? null : Number(ingestStatus),
+      sortBy,
+      sortOrder,
+    })
+    setData(res.data)
+    setTotal(res.total)
+  }, [page, pageSize, keyword, region, status, ingestStatus, sortBy, sortOrder])
 
   useEffect(() => {
     let cancelled = false
@@ -104,7 +169,7 @@ export default function ComicList() {
         keyword,
         region: region === 'all' ? undefined : region,
         status: status === 'all' ? undefined : status,
-        crawlStatus: crawlStatus === 'all' ? null : Number(crawlStatus),
+        ingestStatus: ingestStatus === 'all' ? null : Number(ingestStatus),
         sortBy,
         sortOrder,
       })
@@ -118,7 +183,135 @@ export default function ComicList() {
       clearTimeout(t)
       cancelled = true
     }
-  }, [keyword, region, status, crawlStatus, page, pageSize, sortBy, sortOrder])
+  }, [keyword, region, status, ingestStatus, page, pageSize, sortBy, sortOrder])
+
+  // 单本入库轮询: 有漫画正在入库时, 每 1.5s 拉取实时进度(/api/crawl/image/progress)
+  useEffect(() => {
+    const ids = Object.keys(ingesting)
+    if (ids.length === 0) return
+    const timer = setInterval(async () => {
+      const bookIds = Object.keys(ingesting).map(Number)
+      let allDone = true
+      for (const id of bookIds) {
+        try {
+          const p = await fetchImageProgress(id)
+          setIngesting((prev) => {
+            const cur = prev[id]
+            if (!cur) return prev
+            return {
+              ...prev,
+              [id]: {
+                ...cur,
+                total: p.total,
+                processed: p.processed,
+                success: p.success,
+                fail: p.fail,
+                currentChapter: p.currentChapter,
+                progress: p.progress,
+              },
+            }
+          })
+          // 仍在进行中(或尚未开始但 running)则记为未完成
+          if (p.running || p.processed < p.total) {
+            allDone = false
+          }
+        } catch {
+          /* 忽略单本查询错误 */
+        }
+      }
+      // 若全部完成, 刷新一次列表并清空轮询集合
+      if (allDone) {
+        setIngesting({})
+        refreshBooks()
+      }
+    }, 1500)
+    return () => clearInterval(timer)
+  }, [ingesting, refreshBooks])
+
+  // ===== 行展开 / 章节加载 =====
+  const loadChapters = useCallback(async (bookId: number, chapterPage: number, orderDir: 'asc' | 'desc') => {
+    setExpanded((prev) => ({
+      ...prev,
+      [bookId]: { ...prev[bookId], loading: true, page: chapterPage, orderDir },
+    }))
+    try {
+      const res = await fetchChapters(bookId, chapterPage, CHAPTER_PAGE_SIZE, orderDir)
+      setExpanded((prev) => ({
+        ...prev,
+        [bookId]: {
+          page: res.page,
+          total: res.total,
+          list: res.list,
+          loading: false,
+          loaded: true,
+          orderDir,
+        },
+      }))
+    } catch {
+      setExpanded((prev) => ({ ...prev, [bookId]: { ...prev[bookId], loading: false } }))
+    }
+  }, [])
+
+  const toggleRow = (bookId: number) => {
+    setExpanded((prev) => {
+      if (prev[bookId]) {
+        const n = { ...prev }
+        delete n[bookId]
+        return n
+      }
+      return prev
+    })
+    if (!expanded[bookId]?.loaded) {
+      loadChapters(bookId, 1, 'asc')
+    }
+  }
+
+  const toggleChapterOrder = (bookId: number) => {
+    const cur = expanded[bookId]
+    if (!cur) return
+    const nextDir: 'asc' | 'desc' = cur.orderDir === 'asc' ? 'desc' : 'asc'
+    loadChapters(bookId, 1, nextDir)
+  }
+
+  // 单本入库: 触发图片爬虫仅爬该漫画未爬章节, 并加入轮询集合实时刷新进度
+  const handleIngest = async (b: Book) => {
+    if (ingesting[b.id]) return
+    try {
+      await crawlImageBook(b.id)
+      setIngesting((prev) => ({
+        ...prev,
+        [b.id]: {
+          startedAt: Date.now(),
+          total: b.chapterCount ?? 0,
+          processed: 0,
+          success: 0,
+          fail: 0,
+          currentChapter: '',
+          progress: 0,
+        },
+      }))
+      // 立即拉一次进度(确认爬虫已启动)
+      try {
+        const p = await fetchImageProgress(b.id)
+        setIngesting((prev) => ({
+          ...prev,
+          [b.id]: {
+            startedAt: Date.now(),
+            total: p.total,
+            processed: p.processed,
+            success: p.success,
+            fail: p.fail,
+            currentChapter: p.currentChapter,
+            progress: p.progress,
+          },
+        }))
+      } catch {
+        /* 忽略 */
+      }
+    } catch (e) {
+      setInventoryMsg(`入库提交失败：${(e as Error).message}`)
+    }
+  }
 
   const handleSort = (f: SortField) => {
     if (sortBy === f) {
@@ -202,17 +395,17 @@ export default function ComicList() {
         </Select>
 
         <Select
-          value={crawlStatus}
+          value={ingestStatus}
           onValueChange={(v) => {
-            setCrawlStatus(v)
+            setIngestStatus(v)
             setPage(1)
           }}
         >
           <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="爬取状态" />
+            <SelectValue placeholder="入库状态" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部爬取状态</SelectItem>
+            <SelectItem value="all">全部入库状态</SelectItem>
             {CRAWL_STATUS_OPTIONS.map((o) => (
               <SelectItem key={o.value} value={String(o.value)}>
                 {o.label}
@@ -227,7 +420,7 @@ export default function ComicList() {
             setKeyword('')
             setRegion('all')
             setStatus('all')
-            setCrawlStatus('all')
+            setIngestStatus('all')
             setPage(1)
           }}
         >
@@ -278,6 +471,7 @@ export default function ComicList() {
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50 hover:bg-slate-50">
+                <TableHead className="w-8"></TableHead>
                 <TableHead className="w-[64px]">封面</TableHead>
                 <TableHead>
                   <SortHeader field="id" label="ID" active={sortBy === 'id'} order={sortOrder} onSort={handleSort} />
@@ -329,9 +523,9 @@ export default function ComicList() {
                 </TableHead>
                 <TableHead className="text-center">
                   <SortHeader
-                    field="chapter"
-                    label="章节进度"
-                    active={sortBy === 'chapter'}
+                    field="chapterCount"
+                    label="入库进度"
+                    active={sortBy === 'chapterCount'}
                     order={sortOrder}
                     onSort={handleSort}
                   />
@@ -354,115 +548,262 @@ export default function ComicList() {
                     onSort={handleSort}
                   />
                 </TableHead>
-                <TableHead>爬取状态</TableHead>
+                <TableHead className="text-center">预计时间</TableHead>
+                <TableHead>入库状态</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={19} className="h-32 text-center text-slate-400">
+                  <TableCell colSpan={20} className="h-32 text-center text-slate-400">
                     加载中…
                   </TableCell>
                 </TableRow>
               ) : data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={19} className="h-32 text-center text-slate-400">
+                  <TableCell colSpan={20} className="h-32 text-center text-slate-400">
                     暂无数据
                   </TableCell>
                 </TableRow>
               ) : (
                 data.map((b) => {
                   const cs = getCrawlStatus(b.crawlStatus)
+                  const es = expanded[b.id]
+                  const isOpen = !!es
                   return (
-                    <TableRow key={b.id} className="hover:bg-slate-50">
-                      <TableCell>
-                        <CoverImage
-                          src={b.coverUrl}
-                          name={b.name}
-                          className="size-12 rounded-md"
-                        />
-                      </TableCell>
-                      <TableCell className="font-medium text-slate-700">{b.id}</TableCell>
-                      <TableCell className="text-slate-500">{b.sourceBookId}</TableCell>
-                      <TableCell className="max-w-[200px]">
-                        <button
-                          type="button"
-                          className="truncate text-left font-medium text-indigo-600 hover:underline"
-                          onClick={() => setSelected(b)}
-                          title={b.name}
-                        >
-                          {b.name}
-                        </button>
-                      </TableCell>
-                      <TableCell className="max-w-[120px] truncate text-slate-500" title={b.alias}>
-                        {b.alias ?? '-'}
-                      </TableCell>
-                      <TableCell className="text-slate-600">{b.author ?? '-'}</TableCell>
-                      <TableCell className="text-slate-600">{b.status ?? '-'}</TableCell>
-                      <TableCell className="text-slate-600">{b.region ?? '-'}</TableCell>
-                      <TableCell className="max-w-[180px]">
-                        <div className="flex flex-wrap gap-1">
-                          {b.tags
-                            ? b.tags.split(',').slice(0, 3).map((t) => (
-                                <Badge key={t} variant="secondary" className="font-normal">
-                                  {t}
-                                </Badge>
-                              ))
-                            : '-'}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-slate-600">
-                        {b.clicks?.toLocaleString() ?? '-'}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-slate-600">
-                        {b.score ?? '-'}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-slate-500">
-                        {formatDateTime(b.updateTime)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-slate-500">
-                        {formatDateTime(b.crawlTime)}
-                      </TableCell>
-                      <TableCell className="text-center tabular-nums">
-                        <ProgressCell done={b.chapterCount ?? 0} total={b.chapterCount ?? 0} />
-                      </TableCell>
-                      <TableCell className="text-center tabular-nums">
-                        <ProgressCell
-                          done={b.downloadedImageCount ?? 0}
-                          total={b.totalImageCount ?? 0}
-                        />
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {b.pendingChapterCount === 0 && (b.imageDoneCount ?? 0) > 0 ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                            ✔ 已完成
+                    <Fragment key={b.id}>
+                      <TableRow className="hover:bg-slate-50">
+                        <TableCell className="pr-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7"
+                            onClick={() => toggleRow(b.id)}
+                            title={isOpen ? '收起章节' : '展开章节'}
+                          >
+                            {isOpen ? (
+                              <ChevronDown className="size-4" />
+                            ) : (
+                              <ChevronRight className="size-4" />
+                            )}
+                          </Button>
+                        </TableCell>
+                        <TableCell>
+                          <CoverImage
+                            src={b.coverUrl}
+                            name={b.name}
+                            className="size-12 rounded-md"
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium text-slate-700">{b.id}</TableCell>
+                        <TableCell className="text-slate-500">{b.sourceBookId}</TableCell>
+                        <TableCell className="max-w-[200px]">
+                          <button
+                            type="button"
+                            className="truncate text-left font-medium text-indigo-600 hover:underline"
+                            onClick={() => setSelected(b)}
+                            title={b.name}
+                          >
+                            {b.name}
+                          </button>
+                        </TableCell>
+                        <TableCell className="max-w-[120px] truncate text-slate-500" title={b.alias}>
+                          {b.alias ?? '-'}
+                        </TableCell>
+                        <TableCell className="text-slate-600">{b.author ?? '-'}</TableCell>
+                        <TableCell className="text-slate-600">{b.status ?? '-'}</TableCell>
+                        <TableCell className="text-slate-600">{b.region ?? '-'}</TableCell>
+                        <TableCell className="max-w-[180px]">
+                          <div className="flex flex-wrap gap-1">
+                            {b.tags
+                              ? b.tags.split(',').slice(0, 3).map((t) => (
+                                  <Badge key={t} variant="secondary" className="font-normal">
+                                    {t}
+                                  </Badge>
+                                ))
+                              : '-'}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-slate-600">
+                          {b.clicks?.toLocaleString() ?? '-'}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-slate-600">
+                          {b.score ?? '-'}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-slate-500">
+                          {formatDateTime(b.updateTime)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-slate-500">
+                          {formatDateTime(b.crawlTime)}
+                        </TableCell>
+                        <TableCell className="text-center tabular-nums">
+                          {ingesting[b.id] ? (
+                            <ProgressCell
+                              done={ingesting[b.id].processed}
+                              total={ingesting[b.id].total || b.chapterCount || 0}
+                            />
+                          ) : (
+                            <ProgressCell done={b.imageDoneCount ?? 0} total={b.chapterCount ?? 0} />
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center tabular-nums">
+                          <ProgressCell
+                            done={b.downloadedImageCount ?? 0}
+                            total={b.totalImageCount ?? 0}
+                          />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {b.pendingChapterCount === 0 && (b.imageDoneCount ?? 0) > 0 ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                              ✔ 已完成
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">
+                              待 {b.pendingChapterCount ?? 0} 章
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center text-xs tabular-nums text-slate-500">
+                          <EtaCell
+                            book={b}
+                            ingesting={ingesting[b.id]}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cs.className}`}
+                          >
+                            {cs.label}
                           </span>
-                        ) : (
-                          <span className="text-xs text-slate-400">
-                            待 {b.pendingChapterCount ?? 0} 章
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cs.className}`}
-                        >
-                          {cs.label}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setSelected(b)}
-                          className="text-indigo-600 hover:text-indigo-700"
-                        >
-                          <Eye className="mr-1 size-4" />
-                          详情
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleIngest(b)}
+                              disabled={!!ingesting[b.id]}
+                              className="text-emerald-600 hover:text-emerald-700"
+                              title="对该漫画单独启动图片入库"
+                            >
+                              {ingesting[b.id] ? (
+                                <Loader2 className="mr-1 size-4 animate-spin" />
+                              ) : (
+                                <ImageIcon className="mr-1 size-4" />
+                              )}
+                              入库
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => window.open(`/crawllog/${b.id}`, '_blank')}
+                              className="text-zinc-600 hover:text-zinc-800"
+                              title="查看入库详情 / 爬虫日志"
+                            >
+                              <Terminal className="mr-1 size-4" />
+                              入库详情
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setSelected(b)}
+                              className="text-indigo-600 hover:text-indigo-700"
+                            >
+                              <Eye className="mr-1 size-4" />
+                              详情
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+
+                      {/* 展开行: 章节列表(点击可阅读) */}
+                      {isOpen && (
+                        <TableRow className="bg-slate-50/60 hover:bg-slate-50/60">
+                          <TableCell colSpan={20} className="p-0">
+                            <div className="px-10 py-3">
+                              <div className="mb-2 flex items-center justify-between">
+                                <span className="text-sm font-medium text-slate-600">
+                                  章节列表（{es.total} 话）
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="gap-1 text-slate-500"
+                                  onClick={() => toggleChapterOrder(b.id)}
+                                  disabled={!es.loaded || es.total === 0}
+                                >
+                                  {es.orderDir === 'asc' ? (
+                                    <>
+                                      正序 <ArrowDownWideNarrow className="size-3.5" />
+                                    </>
+                                  ) : (
+                                    <>
+                                      倒序 <ArrowUpWideNarrow className="size-3.5" />
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
+                              {es.loading ? (
+                                <div className="flex items-center gap-2 py-4 text-sm text-slate-400">
+                                  <Loader2 className="size-4 animate-spin" />
+                                  加载章节中…
+                                </div>
+                              ) : es.list.length === 0 ? (
+                                <div className="py-3 text-sm text-slate-400">暂无章节数据</div>
+                              ) : (
+                                <>
+                                  <div className="flex flex-wrap gap-2">
+                                    {es.list.map((c) => (
+                                      <button
+                                        key={c.id}
+                                        type="button"
+                                        onClick={() => window.open(`/reader/${b.id}/${c.id}`, '_blank')}
+                                        className="group inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+                                        title={`${c.title ?? `第${c.chapterNo}话`}（新页签打开）`}
+                                      >
+                                        <BookOpen className="size-3.5 text-slate-400 group-hover:text-indigo-500" />
+                                        <span className="max-w-[220px] truncate">
+                                          {c.title ?? `第${c.chapterNo}话`}
+                                        </span>
+                                        {c.imageCount ? (
+                                          <span className="text-xs text-slate-400 group-hover:text-indigo-400">
+                                            ({c.imageCount})
+                                          </span>
+                                        ) : null}
+                                        <ImageIcon className="size-3.5 text-slate-300 group-hover:text-indigo-400" />
+                                      </button>
+                                    ))}
+                                  </div>
+                                  {/* 章节分页 */}
+                                  <div className="mt-3 flex items-center justify-end gap-1 text-slate-500">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={es.page <= 1}
+                                      onClick={() => loadChapters(b.id, es.page - 1, es.orderDir)}
+                                    >
+                                      上一页
+                                    </Button>
+                                    <span className="px-2 text-sm">
+                                      第 {es.page} / {Math.max(1, Math.ceil(es.total / CHAPTER_PAGE_SIZE))} 页
+                                    </span>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={es.page >= Math.ceil(es.total / CHAPTER_PAGE_SIZE)}
+                                      onClick={() => loadChapters(b.id, es.page + 1, es.orderDir)}
+                                    >
+                                      下一页
+                                    </Button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
                   )
                 })
               )}
@@ -596,4 +937,35 @@ function ProgressCell({ done, total }: { done: number; total: number }) {
       </div>
     </div>
   )
+}
+
+/** 预计完成时间单元格: 根据入库期间实时速率估算剩余时间 */
+function EtaCell({
+  ingesting,
+}: {
+  book: Book
+  ingesting?: {
+    startedAt: number
+    total: number
+    processed: number
+    success: number
+    fail: number
+    currentChapter: string
+    progress: number
+  }
+}) {
+  if (!ingesting) return <span className="text-slate-300">—</span>
+  const total = ingesting.total || 0
+  const processed = ingesting.processed || 0
+  const remaining = Math.max(0, total - processed)
+  if (remaining === 0) return <span className="text-emerald-600">即将完成</span>
+  const elapsedMs = Date.now() - ingesting.startedAt
+  if (processed <= 0 || elapsedMs <= 0) return <span className="text-slate-400">计算中…</span>
+  const ratePerSec = processed / (elapsedMs / 1000)
+  if (ratePerSec <= 0) return <span className="text-slate-400">计算中…</span>
+  const etaSec = remaining / ratePerSec
+  if (etaSec > 3600 * 24) return <span className="text-slate-400">{(etaSec / 86400).toFixed(1)} 天</span>
+  if (etaSec > 3600) return <span className="text-slate-500">{(etaSec / 3600).toFixed(1)} 时</span>
+  if (etaSec > 60) return <span className="text-slate-500">{(etaSec / 60).toFixed(1)} 分</span>
+  return <span className="text-slate-500">{Math.ceil(etaSec)} 秒</span>
 }

@@ -82,7 +82,7 @@ public interface BookService {
      */
     IPage<Book> pageQuery(int page, int pageSize, String keyword, String region,
                           String status, String tag, String sortField, String sortDir,
-                          Integer crawlStatus);
+                          Integer ingestStatus);
 
     /**
      * 按主键查询漫画

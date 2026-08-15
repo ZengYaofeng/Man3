@@ -24,4 +24,11 @@ public interface BookPageService {
      * 图片总数
      */
     long countAll();
+
+    /**
+     * 统计指定章节集合下的图片总数(用于刷新主表计数)
+     *
+     * @param chapterIds 章节ID列表
+     */
+    long countByChapterIds(List<Long> chapterIds);
 }
