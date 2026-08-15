@@ -1,0 +1,53 @@
+import type { SiteSource } from '@/types/siteSource'
+
+// 站点来源 mock 数据（前端样式阶段使用，后续替换为后端接口）
+export const MOCK_SITES: SiteSource[] = [
+  {
+    id: 1,
+    name: '爱看漫画',
+    url: 'https://www.ikanmh.top',
+    imageRule: '将 /uploads/ 替换为 CDN https://cdn.ikanmh.top/',
+    detailUrl: 'https://www.ikanmh.top/book/{bookId}',
+    contentUrl: 'https://www.ikanmh.top/chapter/{chapterId}',
+    enabled: true,
+    remark: '主力源站，更新频率高',
+    createdAt: '2026-01-12 09:20',
+    updatedAt: '2026-03-04 18:11',
+  },
+  {
+    id: 2,
+    name: '漫画DB',
+    url: 'https://mangadb.example.com',
+    imageRule: '提取 data-src 属性，追加 ?x-oss-process=image/resize,w_1200',
+    detailUrl: 'https://mangadb.example.com/manga/{id}',
+    contentUrl: 'https://mangadb.example.com/manga/{id}/chapter/{chapterId}',
+    enabled: true,
+    remark: '备用源，图片清晰',
+    createdAt: '2026-02-01 14:03',
+    updatedAt: '2026-04-21 10:42',
+  },
+  {
+    id: 3,
+    name: '动漫之家',
+    url: 'https://www.dmzj.com',
+    imageRule: '章节页 <img class="comic-img"> 的 src 即原图',
+    detailUrl: 'https://www.dmzj.com/info/{bookId}.html',
+    contentUrl: 'https://www.dmzj.com/view/{bookId}/{chapterId}.shtml',
+    enabled: false,
+    remark: '站点近期反爬加强，已暂停',
+    createdAt: '2026-02-18 21:30',
+    updatedAt: '2026-05-09 08:15',
+  },
+  {
+    id: 4,
+    name: 'Kuaikan',
+    url: 'https://www.kuaikanmanhua.com',
+    imageRule: 'JSON 接口返回 webp，需解码 base64 path',
+    detailUrl: 'https://www.kuaikanmanhua.com/web/topic/{bookId}',
+    contentUrl: 'https://www.kuaikanmanhua.com/web/comic/{chapterId}',
+    enabled: true,
+    remark: '国漫为主',
+    createdAt: '2026-03-22 11:47',
+    updatedAt: '2026-06-15 16:55',
+  },
+]

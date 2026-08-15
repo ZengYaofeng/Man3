@@ -1,6 +1,7 @@
 package com.man3.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -64,9 +65,31 @@ public class Book {
     /** 最近爬取时间 */
     private LocalDateTime crawlTime;
 
+    /** 章节总数(冗余字段, 由章节入库时同步更新) */
+    private Long totalChapterCount;
+
+    /** 图片总数(冗余字段, 由图片入库时同步更新) */
+    private Long totalImageCount;
+
     /** 创建时间 */
     private LocalDateTime createdAt;
 
     /** 更新时间 */
     private LocalDateTime updatedAt;
+
+    /** 章节总数(非持久化, 兼容旧接口, 值等于 totalChapterCount) */
+    @TableField(exist = false)
+    private Long chapterCount;
+
+    /** 图片已爬取的章节数(非持久化, 由章节表聚合填充) */
+    @TableField(exist = false)
+    private Long imageDoneCount;
+
+    /** 待爬章节数(非持久化, 由章节表聚合填充) */
+    @TableField(exist = false)
+    private Long pendingChapterCount;
+
+    /** 该漫画已下载(入库)图片张数(非持久化, 由 book_page.download_status=1 聚合) */
+    @TableField(exist = false)
+    private Long downloadedImageCount;
 }

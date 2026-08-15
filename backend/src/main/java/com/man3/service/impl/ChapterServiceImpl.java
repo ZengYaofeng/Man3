@@ -1,8 +1,13 @@
 package com.man3.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.man3.entity.Chapter;
+import com.man3.entity.Book;
 import com.man3.mapper.ChapterMapper;
+import com.man3.mapper.BookMapper;
+import com.man3.mapper.BookPageMapper;
 import com.man3.service.ChapterService;
 import com.man3.utils.crawler.ikanmh.IkanmhConstants;
 import lombok.extern.slf4j.Slf4j;
@@ -21,9 +26,14 @@ import java.util.Map;
 public class ChapterServiceImpl implements ChapterService {
 
     private final ChapterMapper chapterMapper;
+    private final BookMapper bookMapper;
+    private final BookPageMapper bookPageMapper;
 
-    public ChapterServiceImpl(ChapterMapper chapterMapper) {
+    public ChapterServiceImpl(ChapterMapper chapterMapper, BookMapper bookMapper,
+                               BookPageMapper bookPageMapper) {
         this.chapterMapper = chapterMapper;
+        this.bookMapper = bookMapper;
+        this.bookPageMapper = bookPageMapper;
     }
 
     @Override
@@ -60,6 +70,39 @@ public class ChapterServiceImpl implements ChapterService {
             }
         }
         log.info("同步章节完成 bookId={}, 新增{}条, 更新{}条", bookId, insert, update);
+
+        // 章节入库后, 更新主表冗余计数字段(章节总数 + 图片总数)
+        refreshBookCounters(bookId);
+    }
+
+    /**
+     * 直接通过 Mapper 聚合计算并更新主表计数(避免循环依赖 BookService)
+     */
+    private void refreshBookCounters(Long bookId) {
+        if (bookId == null) {
+            return;
+        }
+        Long chapterCount = chapterMapper.selectCount(
+                new LambdaQueryWrapper<Chapter>().eq(Chapter::getBookId, bookId));
+
+        List<Long> chapterIds = chapterMapper.selectList(
+                new LambdaQueryWrapper<Chapter>()
+                        .select(Chapter::getId)
+                        .eq(Chapter::getBookId, bookId))
+                .stream().map(c -> c.getId()).collect(java.util.stream.Collectors.toList());
+
+        Long imageCount = 0L;
+        if (!chapterIds.isEmpty()) {
+            imageCount = bookPageMapper.selectCount(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.man3.entity.BookPage>()
+                            .in(com.man3.entity.BookPage::getChapterId, chapterIds));
+        }
+
+        Book update = new Book();
+        update.setId(bookId);
+        update.setTotalChapterCount(chapterCount);
+        update.setTotalImageCount(imageCount);
+        bookMapper.updateById(update);
     }
 
     @Override
@@ -76,8 +119,26 @@ public class ChapterServiceImpl implements ChapterService {
     }
 
     @Override
+    public IPage<Chapter> pageByBookId(Long bookId, int page, int pageSize, String orderDir) {
+        LambdaQueryWrapper<Chapter> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Chapter::getBookId, bookId);
+        if ("desc".equalsIgnoreCase(orderDir)) {
+            wrapper.orderByDesc(Chapter::getChapterNo);
+        } else {
+            wrapper.orderByAsc(Chapter::getChapterNo);
+        }
+        return chapterMapper.selectPage(new Page<>(page, pageSize), wrapper);
+    }
+
+    @Override
     public long countAll() {
         return chapterMapper.selectCount(null);
+    }
+
+    @Override
+    public long countByImageStatus(int status) {
+        return chapterMapper.selectCount(new LambdaQueryWrapper<Chapter>()
+                .eq(Chapter::getCrawlStatus, status));
     }
 
     @Override
@@ -92,6 +153,28 @@ public class ChapterServiceImpl implements ChapterService {
     }
 
     @Override
+    public List<Chapter> listUncrawledImagesForBook(Long bookId, int limit) {
+        LambdaQueryWrapper<Chapter> wrapper = new LambdaQueryWrapper<Chapter>()
+                .eq(Chapter::getBookId, bookId)
+                .eq(Chapter::getCrawlStatus, 0)
+                .orderByAsc(Chapter::getId);
+        if (limit > 0) {
+            wrapper.last("LIMIT " + limit);
+        }
+        return chapterMapper.selectList(wrapper);
+    }
+
+    @Override
+    public int countPendingImageChapters(Long bookId) {
+        return chapterMapper.countPendingImageChapters(bookId);
+    }
+
+    @Override
+    public List<Chapter> listPendingImageChaptersForBook(Long bookId, int limit) {
+        return chapterMapper.listPendingImageChaptersForBook(bookId, limit);
+    }
+
+    @Override
     public void updateImageResult(Long chapterId, int imageCount, boolean success) {
         Chapter update = new Chapter();
         update.setId(chapterId);
@@ -100,5 +183,59 @@ public class ChapterServiceImpl implements ChapterService {
         update.setCrawlTime(LocalDateTime.now());
         update.setUpdatedAt(LocalDateTime.now());
         chapterMapper.updateById(update);
+    }
+
+    @Override
+    public Map<Long, ChapterStats> batchStats(List<Long> bookIds) {
+        Map<Long, ChapterStats> result = new HashMap<>();
+        if (bookIds == null || bookIds.isEmpty()) {
+            return result;
+        }
+        List<Map<String, Object>> rows = chapterMapper.batchChapterStats(bookIds);
+        for (Map<String, Object> row : rows) {
+            Long bookId = ((Number) row.get("bookId")).longValue();
+            long totalCh = row.get("totalCh") == null ? 0L : ((Number) row.get("totalCh")).longValue();
+            long imageDone = row.get("imageDone") == null ? 0L : ((Number) row.get("imageDone")).longValue();
+            ChapterStats stats = new ChapterStats();
+            stats.totalCh = totalCh;
+            stats.imageDone = imageDone;
+            result.put(bookId, stats);
+        }
+        return result;
+    }
+
+    @Override
+    public Map<Long, ImageStats> batchImageStats(List<Long> bookIds) {
+        Map<Long, ImageStats> result = new HashMap<>();
+        if (bookIds == null || bookIds.isEmpty()) {
+            return result;
+        }
+        List<Map<String, Object>> rows = chapterMapper.batchImageStats(bookIds);
+        for (Map<String, Object> row : rows) {
+            Long bookId = ((Number) row.get("bookId")).longValue();
+            long totalImage = row.get("totalImage") == null ? 0L : ((Number) row.get("totalImage")).longValue();
+            long declaredImage = row.get("declaredImage") == null ? 0L : ((Number) row.get("declaredImage")).longValue();
+            ImageStats stats = new ImageStats();
+            stats.totalImage = totalImage;
+            stats.declaredImage = declaredImage;
+            result.put(bookId, stats);
+        }
+        return result;
+    }
+
+    @Override
+    public long sumImageCountCrawled() {
+        return chapterMapper.sumImageCountCrawled();
+    }
+
+    @Override
+    public void markImageProcessing(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        Chapter update = new Chapter();
+        update.setCrawlStatus(IkanmhConstants.STATUS_IMAGE_PROCESSING);
+        chapterMapper.update(update, new LambdaQueryWrapper<Chapter>()
+                .in(Chapter::getId, ids));
     }
 }

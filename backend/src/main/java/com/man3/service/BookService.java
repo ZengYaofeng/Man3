@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.man3.entity.Book;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 漫画主表服务
@@ -56,6 +57,18 @@ public interface BookService {
     String maxCrawlTime();
 
     /**
+     * 图片统计(用于仪表盘): { total, downloaded }
+     */
+    Map<String, Object> imageStats();
+
+    /**
+     * 更新漫画主表的冗余计数字段(章节总数 / 图片总数)
+     *
+     * @param bookId 漫画ID
+     */
+    void refreshCounters(Long bookId);
+
+    /**
      * 分页 + 多条件查询漫画列表
      *
      * @param page    页码(从1开始)
@@ -68,7 +81,8 @@ public interface BookService {
      * @param sortDir  排序方向 asc/desc
      */
     IPage<Book> pageQuery(int page, int pageSize, String keyword, String region,
-                          String status, String tag, String sortField, String sortDir);
+                          String status, String tag, String sortField, String sortDir,
+                          Integer ingestStatus);
 
     /**
      * 按主键查询漫画

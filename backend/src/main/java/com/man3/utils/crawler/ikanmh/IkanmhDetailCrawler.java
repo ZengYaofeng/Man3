@@ -32,6 +32,14 @@ public class IkanmhDetailCrawler {
     /** 详情爬虫是否正在运行(供进度接口实时查询) */
     public static volatile boolean running = false;
 
+    /** 详情爬虫停止标志(收到停止指令后置 true, 当前批次结束前退出) */
+    public static volatile boolean stopFlag = false;
+
+    /** 请求外部停止爬虫 */
+    public static void requestStop() {
+        stopFlag = true;
+    }
+
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     private final IkanmhProperties props;
@@ -70,10 +78,15 @@ public class IkanmhDetailCrawler {
         }
         log.info("待爬详情漫画数量: {}, 本次执行: {}", total, books.size());
         running = true;
+        stopFlag = false;
         int success = 0;
         int failed = 0;
         try {
             for (Book book : books) {
+                if (stopFlag) {
+                    log.info("收到停止指令, 中断详情爬取(已处理{}条)", success + failed);
+                    break;
+                }
                 try {
                     crawlOneBook(book);
                     success++;

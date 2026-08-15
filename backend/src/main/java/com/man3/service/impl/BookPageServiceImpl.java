@@ -2,8 +2,11 @@ package com.man3.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.man3.entity.BookPage;
+import com.man3.entity.Chapter;
 import com.man3.mapper.BookPageMapper;
+import com.man3.mapper.ChapterMapper;
 import com.man3.service.BookPageService;
+import com.man3.service.BookService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -21,13 +24,19 @@ import java.util.Set;
 public class BookPageServiceImpl implements BookPageService {
 
     private final BookPageMapper bookPageMapper;
+    private final ChapterMapper chapterMapper;
+    private final BookService bookService;
 
-    public BookPageServiceImpl(BookPageMapper bookPageMapper) {
+    public BookPageServiceImpl(BookPageMapper bookPageMapper, ChapterMapper chapterMapper,
+                               BookService bookService) {
         this.bookPageMapper = bookPageMapper;
+        this.chapterMapper = chapterMapper;
+        this.bookService = bookService;
     }
 
     @Override
-    public void syncPages(Long chapterId, List<String> imgUrls) {
+    public void syncPages(Long chapterId, List<String> imgUrls, List<Long> fileSizes,
+                          List<Integer> widths, List<Integer> heights) {
         if (chapterId == null || imgUrls == null || imgUrls.isEmpty()) {
             return;
         }
@@ -48,6 +57,15 @@ public class BookPageServiceImpl implements BookPageService {
             page.setChapterId(chapterId);
             page.setPageNo(pageNo);
             page.setImgUrl(imgUrls.get(i));
+            if (fileSizes != null && i < fileSizes.size()) {
+                page.setFileSize(fileSizes.get(i));
+            }
+            if (widths != null && i < widths.size()) {
+                page.setImgWidth(widths.get(i));
+            }
+            if (heights != null && i < heights.size()) {
+                page.setImgHeight(heights.get(i));
+            }
             page.setDownloadStatus(0);
             page.setCreatedAt(now);
             page.setUpdatedAt(now);
@@ -60,10 +78,27 @@ public class BookPageServiceImpl implements BookPageService {
             }
         }
         log.info("同步图片完成 chapterId={}, 新增{}条, 共{}页", chapterId, insert, imgUrls.size());
+
+        // 图片入库后, 更新主表冗余计数字段(图片总数)
+        if (insert > 0) {
+            Chapter ch = chapterMapper.selectById(chapterId);
+            if (ch != null && ch.getBookId() != null) {
+                bookService.refreshCounters(ch.getBookId());
+            }
+        }
     }
 
     @Override
     public long countAll() {
         return bookPageMapper.selectCount(null);
+    }
+
+    @Override
+    public long countByChapterIds(List<Long> chapterIds) {
+        if (chapterIds == null || chapterIds.isEmpty()) {
+            return 0L;
+        }
+        return bookPageMapper.selectCount(
+                new LambdaQueryWrapper<BookPage>().in(BookPage::getChapterId, chapterIds));
     }
 }

@@ -8,8 +8,16 @@ import {
   RefreshCw,
   XCircle,
   Clock,
+  Images,
+  StopCircle,
 } from 'lucide-react'
-import { fetchCrawlStatus, startDetailCrawl, type CrawlStatus } from '@/lib/api'
+import {
+  fetchCrawlStatus,
+  startDetailCrawl,
+  startImageCrawl,
+  stopCrawl,
+  type CrawlStatus,
+} from '@/lib/api'
 
 const EMPTY: CrawlStatus = {
   bookCount: 0,
@@ -24,6 +32,18 @@ const EMPTY: CrawlStatus = {
     done: 0,
     progress: 0,
     lastCrawlTime: null,
+  },
+  image: {
+    running: false,
+    pending: 0,
+    done: 0,
+    failed: 0,
+    totalCh: 0,
+    processed: 0,
+    progress: 0,
+    successRate: 0,
+    bookPageCount: 0,
+    imgProgress: 0,
   },
 }
 
@@ -74,6 +94,37 @@ export default function CrawlProgress() {
     }
   }
 
+  const [stopping, setStopping] = useState(false)
+
+  const handleImageStart = async () => {
+    if (status.image.running) return
+    setStarting(true)
+    try {
+      const msg = await startImageCrawl()
+      setToast(msg)
+      await load()
+      setTimeout(() => setToast(null), 4000)
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : '启动失败')
+    } finally {
+      setStarting(false)
+    }
+  }
+
+  const handleStop = async () => {
+    setStopping(true)
+    try {
+      const msg = await stopCrawl()
+      setToast(msg)
+      await load()
+      setTimeout(() => setToast(null), 4000)
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : '停止失败')
+    } finally {
+      setStopping(false)
+    }
+  }
+
   const { detail } = status
   const pending = detail.notCrawled + detail.failed
 
@@ -117,7 +168,7 @@ export default function CrawlProgress() {
         <div>
           <h2 className="text-xl font-semibold text-slate-800">爬取进度</h2>
           <p className="text-sm text-slate-400">
-            实时展示详情爬虫运行状况，每 {POLL_INTERVAL / 1000} 秒自动刷新
+            实时展示详情 / 图片爬虫运行状况，每 {POLL_INTERVAL / 1000} 秒自动刷新
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -146,6 +197,30 @@ export default function CrawlProgress() {
               <Play className="size-4" />
             )}
             启动详情爬虫
+          </button>
+          <button
+            onClick={handleImageStart}
+            disabled={status.image.running || starting}
+            className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {starting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Images className="size-4" />
+            )}
+            启动图片爬虫
+          </button>
+          <button
+            onClick={handleStop}
+            disabled={stopping || (!detail.running && !status.image.running)}
+            className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-white px-4 py-2 text-sm font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {stopping ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <StopCircle className="size-4" />
+            )}
+            停止爬虫
           </button>
           <button
             onClick={load}
@@ -241,6 +316,136 @@ export default function CrawlProgress() {
           color="bg-rose-500"
           text="text-rose-600"
         />
+      </div>
+
+      {/* 图片爬虫实时进度 */}
+      <ImageProgressSection image={status.image} />
+    </div>
+  )
+}
+
+function ImageProgressSection({ image }: { image: CrawlStatus['image'] }) {
+  // 章节级进度(已处理章节/总章节)
+  const chProgressText =
+    image.progress >= 1
+      ? `${Math.round(image.progress)}%`
+      : `${image.progress.toFixed(2)}%`
+  const chBarWidth = image.running
+    ? Math.max(image.progress, 0.6)
+    : image.progress
+
+  // 图片级进度(已入库图片 / 估算图片总数)
+  const imgP = image.imgProgress ?? 0
+  const imgProgressText =
+    imgP >= 1 ? `${Math.round(imgP)}%` : `${imgP.toFixed(2)}%`
+  const imgBarWidth = image.running
+    ? Math.max(imgP, 0.4)
+    : imgP
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Images className="size-5 text-cyan-500" />
+          <span className="font-medium text-slate-700">图片爬虫实时进度</span>
+          {image.running ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-50 px-2.5 py-1 text-xs font-medium text-cyan-700">
+              <span className="relative flex size-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75" />
+                <span className="relative inline-flex size-2 rounded-full bg-cyan-500" />
+              </span>
+              运行中
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
+              <span className="size-2 rounded-full bg-slate-400" />
+              空闲
+            </span>
+          )}
+        </div>
+        {/* 章节进度 + 图片进度 并排显示 */}
+        <div className="flex items-center gap-5">
+          <span className="text-sm">
+            <span className="text-slate-500">章节进度 </span>
+            <b className="font-semibold text-indigo-600">{chProgressText}</b>
+          </span>
+          <span className="text-sm">
+            <span className="text-slate-500">图片进度 </span>
+            <b className="font-semibold text-cyan-600">{imgProgressText}</b>
+          </span>
+        </div>
+      </div>
+
+      {/* 双进度条：上=章节进度，下=图片进度 */}
+      <div className="space-y-3">
+        <div>
+          <div className="mb-1 text-xs text-slate-400">章节处理进度</div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700"
+              style={{ width: `${chBarWidth}%` }}
+            />
+          </div>
+        </div>
+        <div>
+          <div className="mb-1 text-xs text-slate-400">图片入库进度（已入库图片 / 估算总数）</div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-500 transition-all duration-700"
+              style={{ width: `${imgBarWidth}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <MiniStat label="待爬章节" value={image.pending} color="text-slate-600" />
+        <MiniStat label="已爬章节" value={image.done} color="text-emerald-600" />
+        <MiniStat label="失败章节" value={image.failed} color="text-rose-600" />
+        <MiniStat label="已入库图片" value={image.bookPageCount} color="text-cyan-600" />
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-slate-500">
+        <span>
+          已处理章节{' '}
+          <b className="text-slate-700">{image.processed.toLocaleString()}</b> /{' '}
+          {image.totalCh.toLocaleString()}
+        </span>
+        <span>
+          成功率{' '}
+          <b className="text-slate-700">
+            {image.successRate >= 1
+              ? Math.round(image.successRate)
+              : image.successRate.toFixed(1)}
+            %
+          </b>
+        </span>
+        <span>
+          已入库图片{' '}
+          <b className="text-slate-700">
+            {image.bookPageCount.toLocaleString()}
+          </b>{' '}
+          张
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function MiniStat({
+  label,
+  value,
+  color,
+}: {
+  label: string
+  value: number
+  color: string
+}) {
+  return (
+    <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+      <div className="text-xs text-slate-400">{label}</div>
+      <div className={`mt-1 text-xl font-bold ${color}`}>
+        {value.toLocaleString()}
       </div>
     </div>
   )

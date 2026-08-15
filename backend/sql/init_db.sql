@@ -73,6 +73,9 @@ CREATE TABLE `book_page` (
   `chapter_id`       BIGINT        NOT NULL                COMMENT '所属章节ID(关联chapter.id)',
   `page_no`          INT           NOT NULL                COMMENT '图片序号(从1开始,阅读顺序)',
   `img_url`          VARCHAR(1000) NOT NULL                COMMENT '图片URL',
+  `file_size`        BIGINT        DEFAULT NULL            COMMENT '图片字节大小',
+  `img_width`        INT           DEFAULT NULL            COMMENT '图片宽度(px)',
+  `img_height`       INT           DEFAULT NULL            COMMENT '图片高度(px)',
   `local_path`       VARCHAR(500)  DEFAULT NULL            COMMENT '本地下载保存路径(可选)',
   `download_status`  TINYINT       NOT NULL DEFAULT 0      COMMENT '下载状态:0-未下载 1-已下载 2-失败',
   `created_at`       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -82,3 +85,41 @@ CREATE TABLE `book_page` (
   KEY `idx_chapter_id` (`chapter_id`),
   CONSTRAINT `fk_page_chapter` FOREIGN KEY (`chapter_id`) REFERENCES `chapter` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='章节图片链接表';
+
+-- ------------------------------------------------------------
+-- 漫画主表增加冗余计数字段(章节总数 / 图片总数)
+-- 用于快速展示漫画列表的进度, 避免每次查询时聚合计算
+-- ------------------------------------------------------------
+ALTER TABLE `book` ADD COLUMN IF NOT EXISTS `total_chapter_count` BIGINT DEFAULT 0 COMMENT '冗余: 章节总数(由章节入库时同步更新)';
+ALTER TABLE `book` ADD COLUMN IF NOT EXISTS `total_image_count` BIGINT DEFAULT 0 COMMENT '冗余: 图片总数(由图片入库时同步更新)';
+
+-- 回填已有数据: 从 chapter / book_page 聚合计算
+UPDATE `book` b SET
+    `total_chapter_count` = (SELECT COUNT(*) FROM `chapter` c WHERE c.`book_id` = b.`id`),
+    `total_image_count` = (
+        SELECT COUNT(*)
+        FROM `chapter` c
+        JOIN `book_page` p ON p.`chapter_id` = c.`id`
+        WHERE c.`book_id` = b.`id`
+    );
+
+-- ------------------------------------------------------------
+-- 站点来源表 site_source
+-- 记录漫画来源站点的基本信息与抓取规则
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `site_source`;
+CREATE TABLE `site_source` (
+  `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `name`         VARCHAR(128) NOT NULL                COMMENT '网站名称',
+  `url`          VARCHAR(500) NOT NULL                COMMENT '网址(站点根域名)',
+  `image_rule`   TEXT                                COMMENT '图片规则(图片URL解析/替换规则说明)',
+  `detail_url`   VARCHAR(500) DEFAULT NULL           COMMENT '漫画详情网址模板(支持{bookId}/{id}占位符)',
+  `content_url`  VARCHAR(500) DEFAULT NULL           COMMENT '漫画内容(阅读页)网址模板(支持{chapterId}/{id}占位符)',
+  `enabled`      TINYINT(1)   NOT NULL DEFAULT 1     COMMENT '是否启用(1启用 0停用)',
+  `remark`       VARCHAR(255) DEFAULT NULL           COMMENT '备注',
+  `created_at`   DATETIME     DEFAULT NULL           COMMENT '创建时间',
+  `updated_at`   DATETIME     DEFAULT NULL           COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_name` (`name`),
+  KEY `idx_enabled` (`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='漫画来源站点表';

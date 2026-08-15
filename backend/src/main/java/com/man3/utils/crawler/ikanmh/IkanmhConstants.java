@@ -30,4 +30,6 @@ public final class IkanmhConstants {
     public static final int STATUS_ALL_DONE = 3;
     /** 爬取状态: 失败 */
     public static final int STATUS_FAILED = -1;
+    /** 爬取状态: 图片处理中(已被分配至并发工作线程, 尚未完成) */
+    public static final int STATUS_IMAGE_PROCESSING = 5;
 }

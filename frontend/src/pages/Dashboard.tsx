@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { BookOpen, Layers, Image as ImageIcon, CheckCircle2, XCircle } from 'lucide-react'
-import { fetchOverview } from '@/lib/api'
+import { fetchOverview, type Overview } from '@/lib/api'
 
 export default function Dashboard() {
-  const [data, setData] = useState({
+  const [data, setData] = useState<Overview>({
     bookCount: 0,
     chapterCount: 0,
-    bookPageCount: 0,
+    totalImageCount: 0,
+    downloadedImageCount: 0,
     doneCount: 0,
     failedCount: 0,
   })
@@ -18,7 +19,13 @@ export default function Dashboard() {
   const cards = [
     { label: '漫画总数', value: data.bookCount, icon: BookOpen, color: 'bg-indigo-500' },
     { label: '章节总数', value: data.chapterCount, icon: Layers, color: 'bg-sky-500' },
-    { label: '图片总数', value: data.bookPageCount, icon: ImageIcon, color: 'bg-violet-500' },
+    {
+      label: '图片总数',
+      // 已入库(本地下载完成) / 总图片
+      value: `${data.downloadedImageCount.toLocaleString()} / ${data.totalImageCount.toLocaleString()}`,
+      icon: ImageIcon,
+      color: 'bg-violet-500',
+    },
     { label: '爬取完成', value: data.doneCount, icon: CheckCircle2, color: 'bg-emerald-500' },
     { label: '爬取失败', value: data.failedCount, icon: XCircle, color: 'bg-rose-500' },
   ]
@@ -40,9 +47,7 @@ export default function Dashboard() {
               <div className={`mb-3 inline-flex size-10 items-center justify-center rounded-lg ${c.color} text-white`}>
                 <Icon className="size-5" />
               </div>
-              <div className="text-2xl font-bold text-slate-800">
-                {c.value.toLocaleString()}
-              </div>
+              <div className="text-2xl font-bold text-slate-800">{c.value}</div>
               <div className="mt-0.5 text-sm text-slate-400">{c.label}</div>
             </div>
           )
