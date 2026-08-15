@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, Loader2, X } from 'lucide-react'
+import { Loader2, X } from 'lucide-react'
 import { fetchImageLog, fetchImageProgress, type CrawlLogEntry } from '@/lib/api'
 
 /**

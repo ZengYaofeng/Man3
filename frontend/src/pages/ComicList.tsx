@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, Fragment } from 'react'
+import { useEffect, useState, useCallback, useRef, Fragment } from 'react'
 import {
   Table,
   TableBody,
@@ -24,7 +24,6 @@ import {
   ArrowDown,
   ChevronsUpDown,
   Eye,
-  ClipboardList,
   ChevronDown,
   ChevronRight,
   BookOpen,
@@ -33,6 +32,7 @@ import {
   Loader2,
   ArrowDownWideNarrow,
   ArrowUpWideNarrow,
+  DatabaseZap,
 } from 'lucide-react'
 import CoverImage from '@/components/comic/CoverImage'
 import ComicDetailDrawer from '@/components/comic/ComicDetailDrawer'
@@ -40,12 +40,27 @@ import {
   fetchBooks,
   fetchBookOptions,
   fetchChapters,
-  runInventory,
   crawlImageBook,
   fetchImageProgress,
+  fetchIngestPreview,
+  startBatchIngest,
+  cancelBatchIngest,
+  fetchBatchIngestStatus,
+  fetchIngestLogs,
   type BookOptions,
   type Chapter,
+  type IngestPreview,
+  type IngestBatchStatus,
+  type IngestLog,
 } from '@/lib/api'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   type Book,
   type SortField,
@@ -114,8 +129,16 @@ export default function ComicList() {
   const [sortBy, setSortBy] = useState<SortField>('inventory')
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
   const [loading, setLoading] = useState(false)
-  const [inventoryRunning, setInventoryRunning] = useState(false)
-  const [inventoryMsg, setInventoryMsg] = useState<string | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [batchSubmitting, setBatchSubmitting] = useState(false)
+  const [cancellingBatch, setCancellingBatch] = useState(false)
+  const [ingestPreview, setIngestPreview] = useState<IngestPreview | null>(null)
+  const [batchStatus, setBatchStatus] = useState<IngestBatchStatus | null>(null)
+  const [completionQueue, setCompletionQueue] = useState<IngestLog[]>([])
+  const [completionNotice, setCompletionNotice] = useState<IngestLog | null>(null)
+  const [actionMsg, setActionMsg] = useState<string | null>(null)
+  const seenBatchLogIds = useRef<Set<number>>(new Set())
   const [data, setData] = useState<Book[]>([])
   const [total, setTotal] = useState(0)
   const [selected, setSelected] = useState<Book | null>(null)
@@ -142,6 +165,10 @@ export default function ComicList() {
 
   useEffect(() => {
     fetchBookOptions().then(setOptions)
+  }, [])
+
+  useEffect(() => {
+    fetchBatchIngestStatus().then(setBatchStatus).catch(() => undefined)
   }, [])
 
   const refreshBooks = useCallback(async () => {
@@ -228,6 +255,95 @@ export default function ComicList() {
     return () => clearInterval(timer)
   }, [ingesting, refreshBooks])
 
+  const openBatchPreview = async () => {
+    setPreviewLoading(true)
+    try {
+      const preview = await fetchIngestPreview(sortBy, sortOrder)
+      setIngestPreview(preview)
+      setPreviewOpen(true)
+    } catch (e) {
+      setActionMsg(`获取一键入库预览失败：${(e as Error).message}`)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  const confirmBatchIngest = async () => {
+    setBatchSubmitting(true)
+    try {
+      const status = await startBatchIngest(sortBy, sortOrder)
+      setBatchStatus(status)
+      seenBatchLogIds.current = new Set()
+      setPreviewOpen(false)
+      if (!status.running) {
+        setActionMsg(status.message)
+      }
+    } catch (e) {
+      setActionMsg(`一键入库提交失败：${(e as Error).message}`)
+    } finally {
+      setBatchSubmitting(false)
+    }
+  }
+
+  const cancelCurrentBatch = async () => {
+    setCancellingBatch(true)
+    try {
+      const status = await cancelBatchIngest()
+      setBatchStatus(status)
+      setActionMsg('已取消一键入库，正在停止当前漫画的处理。')
+    } catch (e) {
+      setActionMsg(`取消一键入库失败：${(e as Error).message}`)
+    } finally {
+      setCancellingBatch(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!batchStatus?.batchNo) return
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const status = await fetchBatchIngestStatus()
+        if (cancelled) return
+        setBatchStatus(status)
+        const page = await fetchIngestLogs(1, 100, status.batchNo ?? undefined)
+        if (cancelled) return
+        const completed = page.list
+          .filter((log) => log.status === 2 && !seenBatchLogIds.current.has(log.id))
+          .sort((a, b) => a.id - b.id)
+        if (completed.length > 0) {
+          completed.forEach((log) => seenBatchLogIds.current.add(log.id))
+          setCompletionQueue((previous) => [...previous, ...completed])
+        }
+        if (!status.running) {
+          refreshBooks()
+          setActionMsg(status.message)
+        }
+      } catch {
+        // 保留当前界面状态，下一轮继续重试。
+      }
+    }
+    poll()
+    const timer = window.setInterval(poll, 1200)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [batchStatus?.batchNo, refreshBooks])
+
+  useEffect(() => {
+    if (completionNotice || completionQueue.length === 0) return
+    const [next, ...remaining] = completionQueue
+    setCompletionNotice(next)
+    setCompletionQueue(remaining)
+  }, [completionNotice, completionQueue])
+
+  useEffect(() => {
+    if (!completionNotice) return
+    const timer = window.setTimeout(() => setCompletionNotice(null), 4200)
+    return () => window.clearTimeout(timer)
+  }, [completionNotice])
+
   // ===== 行展开 / 章节加载 =====
   const loadChapters = useCallback(async (bookId: number, chapterPage: number, orderDir: 'asc' | 'desc') => {
     setExpanded((prev) => ({
@@ -309,7 +425,7 @@ export default function ComicList() {
         /* 忽略 */
       }
     } catch (e) {
-      setInventoryMsg(`入库提交失败：${(e as Error).message}`)
+      setActionMsg(`入库提交失败：${(e as Error).message}`)
     }
   }
 
@@ -427,32 +543,29 @@ export default function ComicList() {
           重置
         </Button>
 
-        {/* 入库盘点：触发一次盘点，更新章节/漫画入库字段并写入盘点记录 */}
         <Button
           variant="default"
-          disabled={inventoryRunning}
-          onClick={async () => {
-            setInventoryRunning(true)
-            setInventoryMsg(null)
-            try {
-              const rec = await runInventory()
-              setInventoryMsg(
-                `盘点完成：扫描 ${rec.scannedBookCount} 本，新增入库完成 ${rec.doneBookCount} 本，更新章节 ${rec.updatedChapterCount} 章`,
-              )
-              setPage(1)
-            } catch (e) {
-              setInventoryMsg(`盘点失败：${(e as Error).message}`)
-            } finally {
-              setInventoryRunning(false)
-            }
-          }}
+          disabled={previewLoading || batchStatus?.running}
+          onClick={openBatchPreview}
+          className="bg-emerald-600 hover:bg-emerald-700"
         >
-          <ClipboardList className="mr-1 size-4" />
-          {inventoryRunning ? '盘点中…' : '入库盘点'}
+          {previewLoading || batchStatus?.running ? (
+            <Loader2 className="mr-1 size-4 animate-spin" />
+          ) : (
+            <DatabaseZap className="mr-1 size-4" />
+          )}
+          {batchStatus?.running
+            ? `一键入库 ${batchStatus.completedBooks}/${batchStatus.totalBooks}`
+            : '一键入库'}
         </Button>
-        {inventoryMsg && (
-          <span className="max-w-[360px] truncate text-sm text-emerald-600" title={inventoryMsg}>
-            {inventoryMsg}
+        {batchStatus?.running && batchStatus.currentBookName && (
+          <span className="max-w-[300px] truncate text-sm text-slate-500" title={batchStatus.currentBookName}>
+            正在入库：{batchStatus.currentBookName}
+          </span>
+        )}
+        {actionMsg && (
+          <span className="max-w-[360px] truncate text-sm text-rose-600" title={actionMsg}>
+            {actionMsg}
           </span>
         )}
         <Button
@@ -910,6 +1023,99 @@ export default function ComicList() {
           </div>
         </div>
       </div>
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent showCloseButton={!batchSubmitting}>
+          <DialogHeader>
+            <DialogTitle>确认一键入库</DialogTitle>
+            <DialogDescription>
+              将按当前列表排序顺序入库所有“未入库”和“入库中”的漫画，仅保存图片 URL，不下载图片文件。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-2">
+            <div className="border border-slate-200 bg-slate-50 p-3">
+              <div className="text-xs text-slate-500">即将入库漫画</div>
+              <div className="mt-1 text-2xl font-semibold tabular-nums text-slate-800">
+                {ingestPreview?.bookCount ?? 0}
+                <span className="ml-1 text-sm font-normal text-slate-500">部</span>
+              </div>
+            </div>
+            <div className="border border-slate-200 bg-slate-50 p-3">
+              <div className="text-xs text-slate-500">章节总数</div>
+              <div className="mt-1 text-2xl font-semibold tabular-nums text-slate-800">
+                {(ingestPreview?.chapterCount ?? 0).toLocaleString()}
+                <span className="ml-1 text-sm font-normal text-slate-500">章</span>
+              </div>
+            </div>
+          </div>
+          {ingestPreview?.running && (
+            <p className="text-sm text-amber-700">已有一键入库任务正在执行，请等待其结束。</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreviewOpen(false)} disabled={batchSubmitting}>
+              取消
+            </Button>
+            <Button
+              onClick={confirmBatchIngest}
+              disabled={batchSubmitting || ingestPreview?.running || (ingestPreview?.bookCount ?? 0) === 0}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {batchSubmitting && <Loader2 className="mr-1 size-4 animate-spin" />}
+              确定入库
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {batchStatus?.running && (
+        <div className="fixed right-6 top-20 z-[70] w-[min(24rem,calc(100vw-3rem))] animate-in fade-in slide-in-from-top-3 duration-300">
+          <div className="border border-emerald-300 bg-white px-4 py-3 shadow-lg">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-emerald-700">
+                  {batchStatus.cancelRequested ? '正在停止一键入库' : '一键入库进行中'}
+                </div>
+                <div className="mt-1 text-sm text-slate-700">
+                  已入库 <span className="font-semibold tabular-nums">{batchStatus.completedBooks}</span>
+                  <span className="text-slate-400"> / </span>
+                  <span className="font-semibold tabular-nums">{batchStatus.totalBooks}</span> 部漫画
+                </div>
+                {batchStatus.currentBookName && (
+                  <div className="mt-1 truncate text-xs text-slate-500" title={batchStatus.currentBookName}>
+                    正在入库：{batchStatus.currentBookName}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={cancelCurrentBatch}
+                disabled={cancellingBatch || batchStatus.cancelRequested}
+                className="shrink-0 text-xs text-rose-600 underline underline-offset-2 hover:text-rose-700 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                {cancellingBatch || batchStatus.cancelRequested ? '正在取消…' : '取消'}
+              </button>
+            </div>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-emerald-100">
+              <div
+                className="h-full bg-emerald-500 transition-[width] duration-300"
+                style={{ width: `${batchStatus.totalBooks > 0 ? (batchStatus.completedBooks / batchStatus.totalBooks) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {completionNotice && (
+        <div className="fixed right-6 bottom-6 z-[70] max-w-md animate-in fade-in slide-in-from-bottom-3 duration-300">
+          <div className="border border-emerald-300 bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-3 text-white shadow-lg">
+            <div className="text-sm font-semibold">入库完成</div>
+            <div className="mt-1 text-sm leading-6">
+              漫画《{completionNotice.bookName ?? completionNotice.bookId}》共 {completionNotice.totalChapterCount} 章，入库完成，耗时{' '}
+              {completionNotice.durationSeconds ?? 0} 秒
+            </div>
+          </div>
+        </div>
+      )}
 
       <ComicDetailDrawer book={selected} onClose={() => setSelected(null)} />
     </div>

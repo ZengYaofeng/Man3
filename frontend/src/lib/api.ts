@@ -11,11 +11,13 @@ export interface BookQuery {
   tag?: string
   /** 入库状态筛选(0=未入库, 1=入库中, 2=已入库); 后端按主表 crawl_status 映射 */
   ingestStatus?: number | null
+  /** 兼容章节列表的主表爬取状态筛选。 */
+  crawlStatus?: number
   sortBy?: SortField
   sortOrder?: SortOrder
 }
 
-export interface BookPageResult {
+export interface BookListPageResult {
   data: Book[]
   total: number
   page: number
@@ -35,12 +37,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
  * 注意：后端仅支持 score | updateTime | clicks | createdAt
  */
 const SORT_FIELD_MAP: Record<SortField, string> = {
-  id: 'createdAt',
+  id: 'id',
   clicks: 'clicks',
   score: 'score',
   updatedAt: 'updateTime',
   chapter: 'chapter',
   image: 'image',
+  image_done: 'image_done',
   inventory: 'crawlTime',
   chapterCount: 'chapterCount',
 }
@@ -49,7 +52,7 @@ const SORT_FIELD_MAP: Record<SortField, string> = {
  * 获取漫画列表（真实后端 /api/book/list）。
  * 后端未就绪时自动降级到本地 mock 数据，保证页面可演示。
  */
-export async function fetchBooks(query: BookQuery = {}): Promise<BookPageResult> {
+export async function fetchBooks(query: BookQuery = {}): Promise<BookListPageResult> {
   const page = query.page ?? 1
   const pageSize = query.pageSize ?? 10
   const sortBy = query.sortBy ?? 'id'
@@ -87,7 +90,7 @@ export async function fetchBooks(query: BookQuery = {}): Promise<BookPageResult>
 }
 
 /** 后端不可用时的本地 mock 兜底 */
-function fallbackMock(query: BookQuery, page: number, pageSize: number): BookPageResult {
+function fallbackMock(query: BookQuery, page: number, pageSize: number): BookListPageResult {
   const keyword = (query.keyword ?? '').trim().toLowerCase()
   const sortBy = query.sortBy ?? 'id'
   const sortOrder = query.sortOrder ?? 'desc'
@@ -252,6 +255,106 @@ export async function fetchImageLog(bookId: number): Promise<{ running: boolean;
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
   const json = await resp.json()
   return { running: json.running, logs: json.logs || [] }
+}
+
+// ===================== 一键入库与入库日志 =====================
+
+export interface IngestPreview {
+  bookCount: number
+  chapterCount: number
+  running: boolean
+}
+
+export interface IngestBatchStatus {
+  running: boolean
+  batchNo: string | null
+  totalBooks: number
+  totalChapters: number
+  completedBooks: number
+  successBooks: number
+  failedBooks: number
+  currentBookId: number | null
+  currentBookName: string | null
+  lastCompletedLogId: number | null
+  lastCompletedBookName: string | null
+  lastDurationSeconds: number | null
+  cancelRequested: boolean
+  cancelled: boolean
+  message: string
+}
+
+export interface IngestLog {
+  id: number
+  batchNo: string
+  bookId: number
+  bookName: string | null
+  status: number
+  crawlStatusBefore: number | null
+  crawlStatusAfter: number | null
+  totalChapterCount: number
+  pendingChapterCount: number
+  successChapterCount: number
+  failedChapterCount: number
+  imageCount: number
+  startTime: string
+  endTime: string | null
+  durationSeconds: number | null
+  errorMessage: string | null
+  createdAt: string
+}
+
+export interface IngestLogPage {
+  list: IngestLog[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+function batchIngestParams(sortBy: SortField, sortOrder: SortOrder) {
+  const params = new URLSearchParams()
+  params.set('sortField', SORT_FIELD_MAP[sortBy] ?? 'crawlTime')
+  params.set('sortDir', sortOrder)
+  return params
+}
+
+export async function fetchIngestPreview(sortBy: SortField, sortOrder: SortOrder): Promise<IngestPreview> {
+  const resp = await fetch(`/api/ingest/preview?${batchIngestParams(sortBy, sortOrder).toString()}`)
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const json = await resp.json()
+  if (json.code !== 0) throw new Error(json.message || '获取入库预览失败')
+  return json.data as IngestPreview
+}
+
+export async function startBatchIngest(sortBy: SortField, sortOrder: SortOrder): Promise<IngestBatchStatus> {
+  const resp = await fetch(`/api/ingest/start?${batchIngestParams(sortBy, sortOrder).toString()}`, { method: 'POST' })
+  const json = await resp.json()
+  if (!resp.ok || json.code !== 0) throw new Error(json.message || '提交一键入库失败')
+  return json.data as IngestBatchStatus
+}
+
+export async function cancelBatchIngest(): Promise<IngestBatchStatus> {
+  const resp = await fetch('/api/ingest/cancel', { method: 'POST' })
+  const json = await resp.json()
+  if (!resp.ok || json.code !== 0) throw new Error(json.message || '取消一键入库失败')
+  return json.data as IngestBatchStatus
+}
+
+export async function fetchBatchIngestStatus(): Promise<IngestBatchStatus> {
+  const resp = await fetch('/api/ingest/status')
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const json = await resp.json()
+  if (json.code !== 0) throw new Error(json.message || '获取一键入库状态失败')
+  return json.data as IngestBatchStatus
+}
+
+export async function fetchIngestLogs(page = 1, pageSize = 20, batchNo?: string): Promise<IngestLogPage> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  if (batchNo) params.set('batchNo', batchNo)
+  const resp = await fetch(`/api/ingest/logs?${params.toString()}`)
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const json = await resp.json()
+  if (json.code !== 0) throw new Error(json.message || '获取入库日志失败')
+  return json.data as IngestLogPage
 }
 
 /** 统计概览（仪表盘用）

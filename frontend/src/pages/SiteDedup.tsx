@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search, Repeat, Globe, Info, CircleSlash, BookOpenCheck } from 'lucide-react'
+import { Repeat, Globe, Info, CircleSlash, BookOpenCheck } from 'lucide-react'
 import { fetchAllSites, runDedup } from '@/lib/siteApi'
 import type { SiteSource, DedupResult } from '@/types/siteSource'
 

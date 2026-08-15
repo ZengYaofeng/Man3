@@ -10,11 +10,26 @@ import {
   List,
   X,
   BookOpen,
+  Play,
+  Pause,
 } from 'lucide-react'
 import { fetchBookPages, fetchChapters, type BookPage, type Chapter } from '@/lib/api'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const PAGES_PER_BATCH = 10
 const CHAPTER_PAGE_SIZE = 20
+const AUTO_READ_INTERVAL_MS = 1000
+const AUTO_READ_CHAPTER_PAUSE_MS = 3000
+const AUTO_READ_SCROLL_PX = 420
+const AUTO_READ_SPEEDS = Array.from({ length: 11 }, (_, index) => Number((1 + index * 0.1).toFixed(1)))
+const AUTO_READ_ENABLED_KEY = 'man3.reader.auto-read-enabled'
+const AUTO_READ_SPEED_KEY = 'man3.reader.auto-read-speed'
 
 /**
  * 漫画浏览页(仿漫画站阅读页, 普通网页风格, 新页签打开)。
@@ -34,6 +49,14 @@ export default function MangaReaderPage() {
   const [loadingImg, setLoadingImg] = useState(false)
   const [chapterError, setChapterError] = useState<string | null>(null)
   const [showToc, setShowToc] = useState(false)
+  const [autoReadEnabled, setAutoReadEnabled] = useState(() => {
+    return typeof window !== 'undefined' && window.localStorage.getItem(AUTO_READ_ENABLED_KEY) === 'true'
+  })
+  const [autoReadSpeed, setAutoReadSpeed] = useState(() => {
+    if (typeof window === 'undefined') return 1
+    const saved = Number(window.localStorage.getItem(AUTO_READ_SPEED_KEY))
+    return AUTO_READ_SPEEDS.includes(saved) ? saved : 1
+  })
 
   const bookIdNum = Number(bookId)
   const chapterIdNum = Number(chapterId)
@@ -105,18 +128,81 @@ export default function MangaReaderPage() {
     }
   }, [currentChapterId, loadPages])
 
-  const goChapter = (delta: number) => {
+  const goChapter = useCallback((delta: number) => {
     const ni = currentIndex + delta
     if (ni >= 0 && ni < chapters.length) {
       const c = chapters[ni]
       setCurrentChapterId(c.id)
       navigate(`/reader/${bookIdNum}/${c.id}`, { replace: true })
     }
-  }
+  }, [bookIdNum, chapters, currentIndex, navigate])
 
   const imgTotalPages = Math.max(1, Math.ceil(total / PAGES_PER_BATCH))
   const firstImgNo = (page - 1) * PAGES_PER_BATCH + 1
   const lastImgNo = Math.min(page * PAGES_PER_BATCH, total)
+
+  useEffect(() => {
+    window.localStorage.setItem(AUTO_READ_ENABLED_KEY, String(autoReadEnabled))
+  }, [autoReadEnabled])
+
+  useEffect(() => {
+    window.localStorage.setItem(AUTO_READ_SPEED_KEY, String(autoReadSpeed))
+  }, [autoReadSpeed])
+
+  useEffect(() => {
+    if (!autoReadEnabled || loadingChapter || loadingImg || pages.length === 0 || currentChapterId == null) return
+
+    let stopped = false
+    let timer: number | undefined
+    const clearTimer = () => {
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+    const schedule = (callback: () => void, delay: number) => {
+      clearTimer()
+      timer = window.setTimeout(callback, delay)
+    }
+    const advance = () => {
+      if (stopped) return
+      const atBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4
+      if (!atBottom) {
+        window.scrollBy({ top: AUTO_READ_SCROLL_PX * autoReadSpeed, behavior: 'smooth' })
+        schedule(advance, AUTO_READ_INTERVAL_MS)
+        return
+      }
+
+      schedule(() => {
+        if (stopped) return
+        if (page < imgTotalPages) {
+          loadPages(currentChapterId, page + 1)
+          return
+        }
+        if (currentIndex < chapters.length - 1) {
+          goChapter(1)
+          return
+        }
+        setAutoReadEnabled(false)
+      }, AUTO_READ_CHAPTER_PAUSE_MS)
+    }
+
+    schedule(advance, AUTO_READ_INTERVAL_MS)
+    return () => {
+      stopped = true
+      clearTimer()
+    }
+  }, [
+    autoReadEnabled,
+    autoReadSpeed,
+    chapters.length,
+    currentChapterId,
+    currentIndex,
+    goChapter,
+    imgTotalPages,
+    loadPages,
+    loadingChapter,
+    loadingImg,
+    page,
+    pages.length,
+  ])
 
   // 键盘导航
   useEffect(() => {
@@ -133,7 +219,7 @@ export default function MangaReaderPage() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [page, imgTotalPages, currentChapterId, chapters, currentIndex, loadPages])
+  }, [page, imgTotalPages, currentChapterId, goChapter, loadPages])
 
   const back = () => navigate('/comics')
 
@@ -167,7 +253,7 @@ export default function MangaReaderPage() {
     <div className="min-h-screen bg-slate-50 text-slate-800">
       {/* 顶部工具条: 面包屑 + 章节切换 + 目录 */}
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center gap-2 px-4 py-2">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-2 px-4 py-2">
           <button
             type="button"
             onClick={back}
@@ -193,7 +279,7 @@ export default function MangaReaderPage() {
             <span className="truncate text-slate-600">{chapterTitle}</span>
           </nav>
 
-          <div className="flex items-center gap-1">
+          <div className="ml-auto flex items-center gap-1">
             <button
               type="button"
               disabled={currentIndex <= 0}
@@ -202,6 +288,32 @@ export default function MangaReaderPage() {
             >
               <ChevronsLeft className="size-4" /> 上一章
             </button>
+            <button
+              type="button"
+              onClick={() => setAutoReadEnabled((enabled) => !enabled)}
+              className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-sm transition-colors ${
+                autoReadEnabled
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                  : 'border-slate-200 text-slate-600 hover:bg-slate-100'
+              }`}
+              title={autoReadEnabled ? '关闭自动阅读' : '开启自动阅读'}
+            >
+              {autoReadEnabled ? <Pause className="size-4" /> : <Play className="size-4" />}
+              <span className="sm:hidden">{autoReadEnabled ? '关闭' : '开启'}</span>
+              <span className="hidden sm:inline">{autoReadEnabled ? '关闭自动阅读' : '开启自动阅读'}</span>
+            </button>
+            <Select value={String(autoReadSpeed)} onValueChange={(value) => setAutoReadSpeed(Number(value))}>
+              <SelectTrigger className="h-8 w-[72px] text-xs" aria-label="自动阅读倍速">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AUTO_READ_SPEEDS.map((speed) => (
+                  <SelectItem key={speed} value={String(speed)}>
+                    {speed === 1 ? '1x' : `${speed.toFixed(1)}x`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <button
               type="button"
               disabled={currentIndex >= chapters.length - 1}
@@ -281,9 +393,9 @@ export default function MangaReaderPage() {
             <span>本章暂无图片数据</span>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2">
+          <div className="flex flex-col items-center gap-0">
             {pages.map((p) => (
-              <figure key={p.id} className="w-full">
+              <figure key={p.id} className="m-0 w-full">
                 <img
                   src={p.imgUrl}
                   alt={`第${p.pageNo}页`}
@@ -291,9 +403,6 @@ export default function MangaReaderPage() {
                   className="mx-auto block w-full bg-white"
                   referrerPolicy="no-referrer"
                 />
-                <figcaption className="py-1 text-center text-xs text-slate-400">
-                  {p.pageNo}
-                </figcaption>
               </figure>
             ))}
           </div>
