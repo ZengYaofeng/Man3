@@ -126,7 +126,7 @@ public class BookServiceImpl implements BookService {
                                  Integer crawlStatus) {
         // 排序字段白名单, 防止非法值导致 SQL 注入(配合下方 switch 使用实体属性, 不拼接字符串)
         // chapter/image 走内存进度排序, 也需在白名单内以免被重置为 created_at
-        Set<String> allowedSort = new HashSet<>(Arrays.asList("score", "update_time", "clicks", "created_at", "id", "chapter", "image", "image_done"));
+        Set<String> allowedSort = new HashSet<>(Arrays.asList("score", "update_time", "clicks", "created_at", "crawl_time", "id", "chapter", "image", "image_done"));
         if (!allowedSort.contains(sortField)) {
             sortField = "created_at";
         }
@@ -168,6 +168,9 @@ public class BookServiceImpl implements BookService {
                 break;
             case "id":
                 wrapper.orderBy(true, asc, Book::getId);
+                break;
+            case "crawl_time":
+                wrapper.orderBy(true, asc, Book::getCrawlTime);
                 break;
             case "chapter":
             case "image":

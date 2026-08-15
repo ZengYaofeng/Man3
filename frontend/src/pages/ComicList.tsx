@@ -17,10 +17,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search, RefreshCw, ArrowUp, ArrowDown, ChevronsUpDown, Eye } from 'lucide-react'
+import { Search, RefreshCw, ArrowUp, ArrowDown, ChevronsUpDown, Eye, ClipboardList } from 'lucide-react'
 import CoverImage from '@/components/comic/CoverImage'
 import ComicDetailDrawer from '@/components/comic/ComicDetailDrawer'
-import { fetchBooks, fetchBookOptions, type BookOptions } from '@/lib/api'
+import { fetchBooks, fetchBookOptions, runInventory, type BookOptions } from '@/lib/api'
 import {
   type Book,
   type SortField,
@@ -76,9 +76,11 @@ export default function ComicList() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [jumpValue, setJumpValue] = useState('')
-  const [sortBy, setSortBy] = useState<SortField>('image_done')
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  const [sortBy, setSortBy] = useState<SortField>('inventory')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
   const [loading, setLoading] = useState(false)
+  const [inventoryRunning, setInventoryRunning] = useState(false)
+  const [inventoryMsg, setInventoryMsg] = useState<string | null>(null)
   const [data, setData] = useState<Book[]>([])
   const [total, setTotal] = useState(0)
   const [selected, setSelected] = useState<Book | null>(null)
@@ -231,6 +233,35 @@ export default function ComicList() {
         >
           重置
         </Button>
+
+        {/* 入库盘点：触发一次盘点，更新章节/漫画入库字段并写入盘点记录 */}
+        <Button
+          variant="default"
+          disabled={inventoryRunning}
+          onClick={async () => {
+            setInventoryRunning(true)
+            setInventoryMsg(null)
+            try {
+              const rec = await runInventory()
+              setInventoryMsg(
+                `盘点完成：扫描 ${rec.scannedBookCount} 本，新增入库完成 ${rec.doneBookCount} 本，更新章节 ${rec.updatedChapterCount} 章`,
+              )
+              setPage(1)
+            } catch (e) {
+              setInventoryMsg(`盘点失败：${(e as Error).message}`)
+            } finally {
+              setInventoryRunning(false)
+            }
+          }}
+        >
+          <ClipboardList className="mr-1 size-4" />
+          {inventoryRunning ? '盘点中…' : '入库盘点'}
+        </Button>
+        {inventoryMsg && (
+          <span className="max-w-[360px] truncate text-sm text-emerald-600" title={inventoryMsg}>
+            {inventoryMsg}
+          </span>
+        )}
         <Button
           variant="outline"
           size="icon"
@@ -287,6 +318,15 @@ export default function ComicList() {
                     onSort={handleSort}
                   />
                 </TableHead>
+                <TableHead>
+                  <SortHeader
+                    field="inventory"
+                    label="已入库时间"
+                    active={sortBy === 'inventory'}
+                    order={sortOrder}
+                    onSort={handleSort}
+                  />
+                </TableHead>
                 <TableHead className="text-center">
                   <SortHeader
                     field="chapter"
@@ -321,13 +361,13 @@ export default function ComicList() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={18} className="h-32 text-center text-slate-400">
+                  <TableCell colSpan={19} className="h-32 text-center text-slate-400">
                     加载中…
                   </TableCell>
                 </TableRow>
               ) : data.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={18} className="h-32 text-center text-slate-400">
+                  <TableCell colSpan={19} className="h-32 text-center text-slate-400">
                     暂无数据
                   </TableCell>
                 </TableRow>
@@ -380,6 +420,9 @@ export default function ComicList() {
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-slate-500">
                         {formatDateTime(b.updateTime)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-slate-500">
+                        {formatDateTime(b.crawlTime)}
                       </TableCell>
                       <TableCell className="text-center tabular-nums">
                         <ProgressCell done={b.chapterCount ?? 0} total={b.chapterCount ?? 0} />

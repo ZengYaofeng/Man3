@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Globe,
   Repeat,
+  ClipboardList,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -35,6 +36,7 @@ const NAV: NavGroup[] = [
     items: [
       { to: '/comics', label: '漫画列表', icon: ListFilter },
       { to: '/chapters', label: '章节列表', icon: BookOpen },
+      { to: '/inventory', label: '盘点记录', icon: ClipboardList },
     ],
   },
   {
@@ -147,6 +149,7 @@ function HeaderTitle() {
     '/': { icon: LayoutDashboard, title: '仪表盘', sub: '爬虫系统运行概览' },
     '/comics': { icon: BookOpen, title: '漫画列表', sub: '管理已爬取的漫画主表数据' },
     '/chapters': { icon: BookOpen, title: '章节列表', sub: '管理漫画章节数据' },
+    '/inventory': { icon: ClipboardList, title: '盘点记录', sub: '查看入库盘点批次与漫画明细' },
     '/sites': { icon: Globe, title: '站点列表', sub: '管理漫画来源站点（增删改查）' },
     '/dedup': { icon: Repeat, title: '全站查重', sub: '比对漫画表中未匹配的漫画名称' },
     '/crawl/progress': { icon: Bot, title: '爬取进度', sub: '实时爬虫运行监控' },

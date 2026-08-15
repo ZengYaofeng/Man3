@@ -29,7 +29,7 @@ public class BookQueryDTO {
     /** 爬取状态筛选(0=未爬, 1=章节完成, 2=图片完成, 3=完成) */
     private Integer crawlStatus;
 
-    /** 排序字段: score(评分) | updateTime(更新时间) | clicks(点击量) | createdAt(入库时间) */
+    /** 排序字段: score(评分) | updateTime(更新时间) | clicks(点击量) | createdAt(创建时间) | crawlTime(入库完成时间) */
     private String sortField = "createdAt";
 
     /** 排序方向: desc(降序) | asc(升序) */

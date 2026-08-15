@@ -71,7 +71,7 @@ export function getCrawlStatus(value: number) {
 // 连载状态选项
 export const SERIAL_STATUS_OPTIONS = ['连载中', '已完结']
 
-export type SortField = 'id' | 'clicks' | 'score' | 'updatedAt' | 'chapter' | 'image' | 'image_done'
+export type SortField = 'id' | 'clicks' | 'score' | 'updatedAt' | 'chapter' | 'image' | 'image_done' | 'inventory'
 export type SortOrder = 'asc' | 'desc'
 
 /** 排序字段中文标签 */
@@ -83,6 +83,7 @@ export const SORT_LABELS: Record<SortField, string> = {
   chapter: '章节进度',
   image: '图片进度',
   image_done: '图片入库完成',
+  inventory: '已入库时间',
 }
 
 export function formatDateTime(value?: string | null): string {

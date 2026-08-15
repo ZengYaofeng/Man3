@@ -47,4 +47,49 @@ public interface BookPageMapper extends BaseMapper<BookPage> {
         "</script>"
     })
     List<Map<String, Object>> countDownloadedByBookIds(@Param("bookIds") List<Long> bookIds);
+
+    /**
+     * 找出所有章节图片均已入库完成的漫画ID
+     * 判定口径(与代码 isImageFullyDone 一致):
+     *   该漫画每个章节的 book_page 实际图片数 == chapter.image_count, 且声明图片总数 > 0
+     * 性能: 直接聚合, 避免逐本循环
+     *
+     * @return 已入库完成漫画的 book_id 列表
+     */
+    @Select("SELECT ca.book_id AS bookId " +
+            "FROM ( " +
+            "  SELECT c.book_id, " +
+            "         SUM(c.image_count) AS declared, " +
+            "         SUM(COALESCE(pg.cnt, 0)) AS actual " +
+            "  FROM chapter c " +
+            "  LEFT JOIN (SELECT chapter_id, COUNT(*) AS cnt FROM book_page GROUP BY chapter_id) pg " +
+            "    ON pg.chapter_id = c.id " +
+            "  GROUP BY c.book_id " +
+            ") ca " +
+            "WHERE ca.declared > 0 AND ca.declared = ca.actual")
+    List<Long> findFullyDoneBookIds();
+
+    /**
+     * 批量统计每个漫画的: 声明图片总数(章节 image_count 之和) 与 实际入库图片数(book_page 行数)
+     *
+     * @param bookIds 漫画ID列表
+     * @return bookId -> { declared, actual }
+     */
+    @Select("<script>" +
+            "SELECT ca.book_id AS bookId, " +
+            "COALESCE(SUM(ca.declared), 0) AS declared, " +
+            "COALESCE(SUM(ca.actual), 0) AS actual " +
+            "FROM ( " +
+            "  SELECT c.book_id, " +
+            "         c.image_count AS declared, " +
+            "         COALESCE(pg.cnt, 0) AS actual " +
+            "  FROM chapter c " +
+            "  LEFT JOIN (SELECT chapter_id, COUNT(*) AS cnt FROM book_page GROUP BY chapter_id) pg " +
+            "    ON pg.chapter_id = c.id " +
+            "  WHERE c.book_id IN " +
+            "  <foreach collection='bookIds' item='id' open='(' separator=',' close=')'>#{id}</foreach> " +
+            ") ca " +
+            "GROUP BY ca.book_id" +
+            "</script>")
+    List<Map<String, Object>> batchImageAgg(@Param("bookIds") List<Long> bookIds);
 }

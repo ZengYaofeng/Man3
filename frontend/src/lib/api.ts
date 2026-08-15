@@ -40,6 +40,7 @@ const SORT_FIELD_MAP: Record<SortField, string> = {
   updatedAt: 'updateTime',
   chapter: 'chapter',
   image: 'image',
+  inventory: 'crawlTime',
 }
 
 /**
@@ -298,4 +299,62 @@ export async function fetchChapters(
   if (json.code !== 0) throw new Error(json.message || '业务错误')
   const data = json.data as ChapterPageResult
   return { list: data.list ?? [], total: data.total ?? 0, page: data.page ?? 1, pageSize: data.pageSize ?? pageSize }
+}
+
+// ===================== 入库盘点 =====================
+
+/** 盘点批次记录 */
+export interface InventoryRecord {
+  id: number
+  batchNo: string
+  startTime: string | null
+  endTime: string | null
+  status: number // 1-进行中 2-已完成 3-失败
+  scannedBookCount: number
+  doneBookCount: number
+  updatedChapterCount: number
+  updatedBookCount: number
+  remark: string | null
+  createdAt: string
+}
+
+/** 盘点批次内的漫画明细 */
+export interface InventoryRecordBook {
+  id: number
+  recordId: number
+  bookId: number
+  sourceBookId: string | null
+  bookName: string | null
+  chapterCount: number
+  imageCount: number
+  createdAt: string
+}
+
+/** 触发一次入库盘点（同步执行，百万级数据为聚合SQL，通常数秒完成） */
+export async function runInventory(): Promise<InventoryRecord> {
+  const resp = await fetch('/api/inventory/run', { method: 'POST' })
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const json = await resp.json()
+  if (json.code !== 200) throw new Error(json.message || '盘点失败')
+  return json.data as InventoryRecord
+}
+
+/** 盘点记录列表（按时间倒序） */
+export async function fetchInventoryRecords(): Promise<InventoryRecord[]> {
+  const resp = await fetch('/api/inventory/records')
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const json = await resp.json()
+  if (json.code !== 200) throw new Error(json.message || '查询失败')
+  return (json.data as InventoryRecord[]) ?? []
+}
+
+/** 某批次的盘点漫画明细 */
+export async function fetchInventoryRecordBooks(
+  recordId: number,
+): Promise<InventoryRecordBook[]> {
+  const resp = await fetch(`/api/inventory/records/${recordId}/books`)
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const json = await resp.json()
+  if (json.code !== 200) throw new Error(json.message || '查询失败')
+  return (json.data as InventoryRecordBook[]) ?? []
 }

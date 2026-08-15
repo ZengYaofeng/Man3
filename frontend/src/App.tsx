@@ -6,6 +6,7 @@ import CrawlProgress from '@/pages/CrawlProgress'
 import ChapterList from '@/pages/ChapterList'
 import SiteList from '@/pages/SiteList'
 import SiteDedup from '@/pages/SiteDedup'
+import InventoryHistory from '@/pages/InventoryHistory'
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="chapters" element={<ChapterList />} />
           <Route path="sites" element={<SiteList />} />
           <Route path="dedup" element={<SiteDedup />} />
+          <Route path="inventory" element={<InventoryHistory />} />
           <Route path="crawl/progress" element={<CrawlProgress />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
