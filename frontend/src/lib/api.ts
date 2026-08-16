@@ -13,6 +13,9 @@ export interface BookQuery {
   ingestStatus?: number | null
   /** 兼容章节列表的主表爬取状态筛选。 */
   crawlStatus?: number
+  /** Chapter count range: lower bound inclusive, upper bound exclusive. */
+  chapterMin?: number
+  chapterMax?: number
   sortBy?: SortField
   sortOrder?: SortOrder
 }
@@ -68,6 +71,8 @@ export async function fetchBooks(query: BookQuery = {}): Promise<BookListPageRes
   if (query.ingestStatus !== null && query.ingestStatus !== undefined) {
     params.set('ingestStatus', String(query.ingestStatus))
   }
+  if (query.chapterMin !== undefined) params.set('chapterMin', String(query.chapterMin))
+  if (query.chapterMax !== undefined) params.set('chapterMax', String(query.chapterMax))
   params.set('sortField', SORT_FIELD_MAP[sortBy] ?? 'createdAt')
   params.set('sortDir', sortOrder)
 
@@ -113,6 +118,12 @@ function fallbackMock(query: BookQuery, page: number, pageSize: number): BookLis
   }
   if (query.ingestStatus !== null && query.ingestStatus !== undefined) {
     list = list.filter((b) => getCrawlStatus(b.crawlStatus).value === query.ingestStatus)
+  }
+  if (query.chapterMin !== undefined) {
+    list = list.filter((b) => (b.chapterCount ?? 0) >= query.chapterMin!)
+  }
+  if (query.chapterMax !== undefined) {
+    list = list.filter((b) => (b.chapterCount ?? 0) < query.chapterMax!)
   }
   list.sort((a, b) => {
     let cmp = 0

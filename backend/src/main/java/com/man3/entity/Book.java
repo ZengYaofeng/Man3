@@ -26,6 +26,9 @@ public class Book {
     /** 漫画名称 */
     private String name;
 
+    /** Canonical pinyin key used for cross-script comic name matching. */
+    private String namePinyin;
+
     /** 漫画别名 */
     private String alias;
 

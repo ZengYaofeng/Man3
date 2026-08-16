@@ -7,6 +7,7 @@ import com.man3.mapper.BookPageMapper;
 import com.man3.mapper.ChapterMapper;
 import com.man3.service.BookPageService;
 import com.man3.service.BookService;
+import com.man3.service.SystemStatService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -26,12 +27,14 @@ public class BookPageServiceImpl implements BookPageService {
     private final BookPageMapper bookPageMapper;
     private final ChapterMapper chapterMapper;
     private final BookService bookService;
+    private final SystemStatService systemStatService;
 
     public BookPageServiceImpl(BookPageMapper bookPageMapper, ChapterMapper chapterMapper,
-                               BookService bookService) {
+                               BookService bookService, SystemStatService systemStatService) {
         this.bookPageMapper = bookPageMapper;
         this.chapterMapper = chapterMapper;
         this.bookService = bookService;
+        this.systemStatService = systemStatService;
     }
 
     @Override
@@ -81,6 +84,7 @@ public class BookPageServiceImpl implements BookPageService {
 
         // 图片入库后, 更新主表冗余计数字段(图片总数)
         if (insert > 0) {
+            systemStatService.recordInserted(0, 0, insert);
             Chapter ch = chapterMapper.selectById(chapterId);
             if (ch != null && ch.getBookId() != null) {
                 bookService.refreshCounters(ch.getBookId());

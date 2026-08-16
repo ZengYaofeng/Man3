@@ -10,6 +10,8 @@ import com.man3.mapper.BookPageMapper;
 import com.man3.mapper.ChapterMapper;
 import com.man3.service.BookService;
 import com.man3.service.ChapterService;
+import com.man3.service.SystemStatService;
+import com.man3.utils.ComicNameNormalizer;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -32,26 +34,32 @@ public class BookServiceImpl implements BookService {
     private final ChapterService chapterService;
     private final BookPageMapper bookPageMapper;
     private final ChapterMapper chapterMapper;
+    private final SystemStatService systemStatService;
 
     public BookServiceImpl(BookMapper bookMapper, ChapterService chapterService,
-                           BookPageMapper bookPageMapper, ChapterMapper chapterMapper) {
+                           BookPageMapper bookPageMapper, ChapterMapper chapterMapper,
+                           SystemStatService systemStatService) {
         this.bookMapper = bookMapper;
         this.chapterService = chapterService;
         this.bookPageMapper = bookPageMapper;
         this.chapterMapper = chapterMapper;
+        this.systemStatService = systemStatService;
     }
 
     @Override
     public void upsertFromList(Book book) {
+        book.setNamePinyin(ComicNameNormalizer.toPinyin(book.getName()));
         Book exist = getBySourceBookId(book.getSourceBookId());
         if (exist == null) {
             book.setCrawlStatus(0);
             book.setCreatedAt(LocalDateTime.now());
             book.setUpdatedAt(LocalDateTime.now());
             bookMapper.insert(book);
+            systemStatService.recordInserted(1, 0, 0);
         } else {
             // 列表页数据只覆盖名称/封面/简介/评分, 保留已有详情信息
             exist.setName(book.getName());
+            exist.setNamePinyin(book.getNamePinyin());
             exist.setCoverUrl(book.getCoverUrl());
             exist.setDescription(book.getDescription());
             exist.setScore(book.getScore());
@@ -63,6 +71,9 @@ public class BookServiceImpl implements BookService {
 
     @Override
     public void updateDetail(Book book) {
+        if (book.getName() != null) {
+            book.setNamePinyin(ComicNameNormalizer.toPinyin(book.getName()));
+        }
         book.setUpdatedAt(LocalDateTime.now());
         bookMapper.updateById(book);
     }
@@ -92,11 +103,13 @@ public class BookServiceImpl implements BookService {
 
     @Override
     public void updateCrawlStatus(Long id, Integer status) {
+        Book current = bookMapper.selectById(id);
         Book book = new Book();
         book.setId(id);
         book.setCrawlStatus(status);
         book.setCrawlTime(LocalDateTime.now());
         bookMapper.updateById(book);
+        systemStatService.recordBookStatusChange(current == null ? null : current.getCrawlStatus(), status);
     }
 
     @Override
@@ -123,7 +136,7 @@ public class BookServiceImpl implements BookService {
     @Override
     public IPage<Book> pageQuery(int page, int pageSize, String keyword, String region,
                                  String status, String tag, String sortField, String sortDir,
-                                 Integer ingestStatus) {
+                                 Integer ingestStatus, Long chapterMin, Long chapterMax) {
         // 排序字段白名单, 防止非法值导致 SQL 注入(配合下方 switch 使用实体属性, 不拼接字符串)
         // chapter/image 走内存进度排序, 也需在白名单内以免被重置为 created_at
         Set<String> allowedSort = new HashSet<>(Arrays.asList("score", "update_time", "clicks", "created_at", "crawl_time", "id", "chapter", "image", "image_done", "chapterCount"));
@@ -164,6 +177,12 @@ public class BookServiceImpl implements BookService {
                 default:
                     break;
             }
+        }
+        if (chapterMin != null && chapterMin >= 0) {
+            wrapper.ge(Book::getTotalChapterCount, chapterMin);
+        }
+        if (chapterMax != null && chapterMax > 0) {
+            wrapper.lt(Book::getTotalChapterCount, chapterMax);
         }
         // 章节进度/图片进度/图片入库完成排序无法在 book 表直接 ORDER BY(聚合字段在 chapter 表),
         // 因此这几类排序改为: 先按其它可索引字段分页, 查询后填充聚合字段并在内存重排本页

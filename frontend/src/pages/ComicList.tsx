@@ -73,6 +73,20 @@ import {
 
 const PAGE_SIZES = [10, 20, 50]
 const CHAPTER_PAGE_SIZE = 20
+interface ChapterRange {
+  value: string
+  label: string
+  min?: number
+  max?: number
+}
+
+const CHAPTER_RANGES: ChapterRange[] = [
+  { value: 'all', label: '全部章节数' },
+  { value: '0-50', label: '0-50 章', min: 0, max: 50 },
+  { value: '50-100', label: '50-100 章', min: 50, max: 100 },
+  { value: '100-300', label: '100-300 章', min: 100, max: 300 },
+  { value: '300+', label: '300 章以上', min: 300 },
+]
 
 interface ExpandState {
   page: number
@@ -123,6 +137,7 @@ export default function ComicList() {
   const [region, setRegion] = useState('all')
   const [status, setStatus] = useState('all')
   const [ingestStatus, setIngestStatus] = useState('all')
+  const [chapterRange, setChapterRange] = useState('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [jumpValue, setJumpValue] = useState('')
@@ -171,6 +186,7 @@ export default function ComicList() {
   }, [])
 
   const refreshBooks = useCallback(async () => {
+    const selectedChapterRange = CHAPTER_RANGES.find((item) => item.value === chapterRange)
     const res = await fetchBooks({
       page,
       pageSize,
@@ -178,17 +194,20 @@ export default function ComicList() {
       region: region === 'all' ? undefined : region,
       status: status === 'all' ? undefined : status,
       ingestStatus: ingestStatus === 'all' ? null : Number(ingestStatus),
+      chapterMin: selectedChapterRange?.min,
+      chapterMax: selectedChapterRange?.max,
       sortBy,
       sortOrder,
     })
     setData(res.data)
     setTotal(res.total)
-  }, [page, pageSize, keyword, region, status, ingestStatus, sortBy, sortOrder])
+  }, [page, pageSize, keyword, region, status, ingestStatus, chapterRange, sortBy, sortOrder])
 
   useEffect(() => {
     let cancelled = false
     const t = setTimeout(async () => {
       setLoading(true)
+      const selectedChapterRange = CHAPTER_RANGES.find((item) => item.value === chapterRange)
       const res = await fetchBooks({
         page,
         pageSize,
@@ -196,6 +215,8 @@ export default function ComicList() {
         region: region === 'all' ? undefined : region,
         status: status === 'all' ? undefined : status,
         ingestStatus: ingestStatus === 'all' ? null : Number(ingestStatus),
+        chapterMin: selectedChapterRange?.min,
+        chapterMax: selectedChapterRange?.max,
         sortBy,
         sortOrder,
       })
@@ -209,7 +230,7 @@ export default function ComicList() {
       clearTimeout(t)
       cancelled = true
     }
-  }, [keyword, region, status, ingestStatus, page, pageSize, sortBy, sortOrder])
+  }, [keyword, region, status, ingestStatus, chapterRange, page, pageSize, sortBy, sortOrder])
 
   // 单本入库轮询: 有漫画正在入库时, 每 1.5s 拉取实时进度(/api/crawl/image/progress)
   useEffect(() => {
@@ -524,6 +545,25 @@ export default function ComicList() {
           </SelectContent>
         </Select>
 
+        <Select
+          value={chapterRange}
+          onValueChange={(value) => {
+            setChapterRange(value)
+            setPage(1)
+          }}
+        >
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="章节数" />
+          </SelectTrigger>
+          <SelectContent>
+            {CHAPTER_RANGES.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         <Button
           variant="outline"
           onClick={() => {
@@ -531,6 +571,7 @@ export default function ComicList() {
             setRegion('all')
             setStatus('all')
             setIngestStatus('all')
+            setChapterRange('all')
             setPage(1)
           }}
         >

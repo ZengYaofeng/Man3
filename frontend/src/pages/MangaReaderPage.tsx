@@ -14,6 +14,8 @@ import {
   Pause,
 } from 'lucide-react'
 import { fetchBookPages, fetchChapters, type BookPage, type Chapter } from '@/lib/api'
+import { fetchExternalChapters, fetchExternalImagePages } from '@/lib/externalComicApi'
+import type { ExternalComicSource } from '@/types/externalComic'
 import {
   Select,
   SelectContent,
@@ -33,25 +35,33 @@ const AUTO_READ_SPEEDS = Array.from({ length: 11 }, (_, index) => Number((1 + in
 const AUTO_READ_ENABLED_KEY = 'man3.reader.auto-read-enabled'
 const AUTO_READ_SPEED_KEY = 'man3.reader.auto-read-speed'
 
+type ReaderChapter = Pick<Chapter, 'id' | 'chapterNo' | 'title' | 'imageCount'>
+type ReaderPage = Pick<BookPage, 'id' | 'pageNo' | 'imgUrl'>
+
+function isExternalSource(value: string | undefined): value is ExternalComicSource {
+  return value === 'niaoniaomh' || value === 'yuyumh'
+}
+
 /**
  * 漫画浏览页(仿漫画站阅读页, 普通网页风格, 新页签打开)。
  * 路由: /reader/:bookId/:chapterId
  * 顶部面包屑 + 标题 + 上一章/下一章 + 章节目录; 竖向滚动图片流 + 底部翻页。
  */
 export default function MangaReaderPage() {
-  const { bookId, chapterId } = useParams<{ bookId: string; chapterId: string }>()
+  const { source, bookId, chapterId } = useParams<{ source?: string; bookId: string; chapterId: string }>()
   const navigate = useNavigate()
+  const externalSource = isExternalSource(source) ? source : null
 
-  const [chapters, setChapters] = useState<Chapter[]>([])
+  const [chapters, setChapters] = useState<ReaderChapter[]>([])
   const [currentChapterId, setCurrentChapterId] = useState<number | null>(null)
-  const [pages, setPages] = useState<BookPage[]>([])
+  const [pages, setPages] = useState<ReaderPage[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loadingChapter, setLoadingChapter] = useState(true)
   const [loadingImg, setLoadingImg] = useState(false)
   const [chapterError, setChapterError] = useState<string | null>(null)
   const [showToc, setShowToc] = useState(false)
-  const [fullChapterMode, setFullChapterMode] = useState(false)
+  const [fullChapterMode, setFullChapterMode] = useState(true)
   const [autoReadEnabled, setAutoReadEnabled] = useState(() => {
     return typeof window !== 'undefined' && window.localStorage.getItem(AUTO_READ_ENABLED_KEY) === 'true'
   })
@@ -69,6 +79,9 @@ export default function MangaReaderPage() {
 
   const currentIndex = chapters.findIndex((c) => c.id === currentChapterId)
   const current = currentIndex >= 0 ? chapters[currentIndex] : null
+  const readerUrl = (nextChapterId: number) => externalSource
+    ? `/reader/${externalSource}/${bookIdNum}/${nextChapterId}`
+    : `/reader/${bookIdNum}/${nextChapterId}`
 
   // 加载章节列表(按正序)
   useEffect(() => {
@@ -81,11 +94,15 @@ export default function MangaReaderPage() {
     setLoadingChapter(true)
     setChapterError(null)
     const loadAll = async () => {
-      const first = await fetchChapters(bookIdNum, 1, CHAPTER_PAGE_SIZE, 'asc')
-      let all = [...first.list]
+      const first = externalSource
+        ? await fetchExternalChapters(externalSource, bookIdNum, 1, CHAPTER_PAGE_SIZE, 'asc')
+        : await fetchChapters(bookIdNum, 1, CHAPTER_PAGE_SIZE, 'asc')
+      let all: ReaderChapter[] = [...first.list]
       const pages = Math.max(1, Math.ceil(first.total / CHAPTER_PAGE_SIZE))
       for (let p = 2; p <= pages; p++) {
-        const r = await fetchChapters(bookIdNum, p, CHAPTER_PAGE_SIZE, 'asc')
+        const r = externalSource
+          ? await fetchExternalChapters(externalSource, bookIdNum, p, CHAPTER_PAGE_SIZE, 'asc')
+          : await fetchChapters(bookIdNum, p, CHAPTER_PAGE_SIZE, 'asc')
         all = all.concat(r.list)
       }
       return all
@@ -97,7 +114,7 @@ export default function MangaReaderPage() {
         setLoadingChapter(false)
         // 若路由未指章节, 默认打开第一章
         if (!chapterIdNum && all.length > 0) {
-          navigate(`/reader/${bookIdNum}/${all[0].id}`, { replace: true })
+          navigate(readerUrl(all[0].id), { replace: true })
         } else if (chapterIdNum) {
           setCurrentChapterId(chapterIdNum)
         }
@@ -110,12 +127,14 @@ export default function MangaReaderPage() {
     return () => {
       cancelled = true
     }
-  }, [bookIdNum, chapterIdNum, navigate])
+  }, [bookIdNum, chapterIdNum, externalSource, navigate])
 
   const loadPages = useCallback(async (chId: number, p: number) => {
     setLoadingImg(true)
     try {
-      const res = await fetchBookPages(chId, p, PAGES_PER_BATCH)
+      const res = externalSource
+        ? await fetchExternalImagePages(externalSource, chId, p, PAGES_PER_BATCH)
+        : await fetchBookPages(chId, p, PAGES_PER_BATCH)
       setPages(res.list)
       setTotal(res.total)
       setPage(res.page)
@@ -127,16 +146,20 @@ export default function MangaReaderPage() {
     } finally {
       setLoadingImg(false)
     }
-  }, [])
+  }, [externalSource])
 
   const loadEntireChapter = useCallback(async (chId: number) => {
     setLoadingImg(true)
     try {
-      const first = await fetchBookPages(chId, 1, FULL_CHAPTER_PAGE_SIZE)
+      const first = externalSource
+        ? await fetchExternalImagePages(externalSource, chId, 1, FULL_CHAPTER_PAGE_SIZE)
+        : await fetchBookPages(chId, 1, FULL_CHAPTER_PAGE_SIZE)
       const requestCount = Math.ceil(first.total / FULL_CHAPTER_PAGE_SIZE)
       const remaining = await Promise.all(
         Array.from({ length: Math.max(0, requestCount - 1) }, (_, index) =>
-          fetchBookPages(chId, index + 2, FULL_CHAPTER_PAGE_SIZE),
+          externalSource
+            ? fetchExternalImagePages(externalSource, chId, index + 2, FULL_CHAPTER_PAGE_SIZE)
+            : fetchBookPages(chId, index + 2, FULL_CHAPTER_PAGE_SIZE),
         ),
       )
       setPages([...
@@ -153,7 +176,7 @@ export default function MangaReaderPage() {
     } finally {
       setLoadingImg(false)
     }
-  }, [])
+  }, [externalSource])
 
   // 切换章节时重置图片
   useEffect(() => {
@@ -175,13 +198,16 @@ export default function MangaReaderPage() {
       pauseAfterChapterLoadRef.current = true
       autoReadChapterTokenRef.current += 1
       setCurrentChapterId(c.id)
-      navigate(`/reader/${bookIdNum}/${c.id}`, { replace: true })
+      navigate(readerUrl(c.id), { replace: true })
     }
-  }, [bookIdNum, chapters, currentIndex, navigate])
+  }, [chapters, currentIndex, navigate, externalSource, bookIdNum])
 
   const imgTotalPages = fullChapterMode ? 1 : Math.max(1, Math.ceil(total / PAGES_PER_BATCH))
   const firstImgNo = (page - 1) * PAGES_PER_BATCH + 1
   const lastImgNo = Math.min(page * PAGES_PER_BATCH, total)
+  const imageUrl = (image: ReaderPage) => externalSource === 'yuyumh'
+    ? `/api/external-comics/yuyumh/images/${image.id}`
+    : image.imgUrl
 
   useEffect(() => {
     window.localStorage.setItem(AUTO_READ_ENABLED_KEY, String(autoReadEnabled))
@@ -266,7 +292,7 @@ export default function MangaReaderPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [page, imgTotalPages, currentChapterId, goChapter, loadPages])
 
-  const back = () => navigate('/comics')
+  const back = () => navigate(externalSource ? `/sources/${externalSource}` : '/comics')
 
   const chapterTitle = current?.title ?? (current ? `第${current.chapterNo}话` : '')
 
@@ -419,7 +445,7 @@ export default function MangaReaderPage() {
                   type="button"
                   onClick={() => {
                     setCurrentChapterId(c.id)
-                    navigate(`/reader/${bookIdNum}/${c.id}`, { replace: true })
+                    navigate(readerUrl(c.id), { replace: true })
                     setShowToc(false)
                   }}
                   className={`rounded-lg border px-3 py-1.5 text-sm transition ${
@@ -456,7 +482,7 @@ export default function MangaReaderPage() {
             {pages.map((p) => (
               <figure key={p.id} className="m-0 w-full">
                 <img
-                  src={p.imgUrl}
+                  src={imageUrl(p)}
                   alt={`第${p.pageNo}页`}
                   loading="lazy"
                   className="mx-auto block w-full bg-white"

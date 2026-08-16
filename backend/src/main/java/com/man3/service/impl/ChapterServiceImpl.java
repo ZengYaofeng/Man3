@@ -10,6 +10,7 @@ import com.man3.mapper.ChapterMapper;
 import com.man3.mapper.BookMapper;
 import com.man3.mapper.BookPageMapper;
 import com.man3.service.ChapterService;
+import com.man3.service.SystemStatService;
 import com.man3.utils.crawler.ikanmh.IkanmhConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,12 +30,14 @@ public class ChapterServiceImpl implements ChapterService {
     private final ChapterMapper chapterMapper;
     private final BookMapper bookMapper;
     private final BookPageMapper bookPageMapper;
+    private final SystemStatService systemStatService;
 
     public ChapterServiceImpl(ChapterMapper chapterMapper, BookMapper bookMapper,
-                               BookPageMapper bookPageMapper) {
+                               BookPageMapper bookPageMapper, SystemStatService systemStatService) {
         this.chapterMapper = chapterMapper;
         this.bookMapper = bookMapper;
         this.bookPageMapper = bookPageMapper;
+        this.systemStatService = systemStatService;
     }
 
     @Override
@@ -74,6 +77,7 @@ public class ChapterServiceImpl implements ChapterService {
 
         // 章节入库后, 更新主表冗余计数字段(章节总数 + 图片总数)
         refreshBookCounters(bookId);
+        systemStatService.recordInserted(0, insert, 0);
     }
 
     /**
