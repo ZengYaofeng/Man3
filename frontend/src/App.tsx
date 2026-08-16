@@ -10,6 +10,8 @@ import InventoryHistory from '@/pages/InventoryHistory'
 import IngestLogList from '@/pages/IngestLogList'
 import MangaReaderPage from '@/pages/MangaReaderPage'
 import CrawlLogPage from '@/pages/CrawlLogPage'
+import ExternalComicListPage from '@/pages/ExternalComicListPage'
+import ExternalCrawlerManagementPage from '@/pages/ExternalCrawlerManagementPage'
 
 export default function App() {
   return (
@@ -21,6 +23,9 @@ export default function App() {
           <Route path="chapters" element={<ChapterList />} />
           <Route path="sites" element={<SiteList />} />
           <Route path="dedup" element={<SiteDedup />} />
+          <Route path="sources/niaoniaomh" element={<ExternalComicListPage source="niaoniaomh" />} />
+          <Route path="sources/yuyumh" element={<ExternalComicListPage source="yuyumh" />} />
+          <Route path="external-crawlers" element={<ExternalCrawlerManagementPage />} />
           <Route path="inventory" element={<InventoryHistory />} />
           <Route path="ingest-logs" element={<IngestLogList />} />
           <Route path="crawl/progress" element={<CrawlProgress />} />
@@ -28,6 +33,7 @@ export default function App() {
         </Route>
         {/* 独立漫画阅读页(新页签打开, 脱离侧边栏布局) */}
         <Route path="reader/:bookId/:chapterId" element={<MangaReaderPage />} />
+        <Route path="reader/:source/:bookId/:chapterId" element={<MangaReaderPage />} />
         {/* 入库详情 / 爬虫日志页(新页签打开, 控制台风格) */}
         <Route path="crawllog/:bookId" element={<CrawlLogPage />} />
       </Routes>

@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS `system_stat` (
+  `id` BIGINT NOT NULL,
+  `book_count` BIGINT NOT NULL DEFAULT 0,
+  `chapter_count` BIGINT NOT NULL DEFAULT 0,
+  `total_image_count` BIGINT NOT NULL DEFAULT 0,
+  `downloaded_image_count` BIGINT NOT NULL DEFAULT 0,
+  `done_book_count` BIGINT NOT NULL DEFAULT 0,
+  `failed_book_count` BIGINT NOT NULL DEFAULT 0,
+  `last_reconciled_at` DATETIME DEFAULT NULL,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

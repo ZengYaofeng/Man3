@@ -4,9 +4,8 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.man3.api.dto.BookQueryDTO;
 import com.man3.api.dto.PageResult;
 import com.man3.entity.Book;
-import com.man3.mapper.BookPageMapper;
 import com.man3.service.BookService;
-import com.man3.service.ChapterService;
+import com.man3.service.SystemStatService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,14 +27,11 @@ import java.util.Map;
 public class BookApiController {
 
     private final BookService bookService;
-    private final ChapterService chapterService;
-    private final BookPageMapper bookPageMapper;
+    private final SystemStatService systemStatService;
 
-    public BookApiController(BookService bookService, ChapterService chapterService,
-                             BookPageMapper bookPageMapper) {
+    public BookApiController(BookService bookService, SystemStatService systemStatService) {
         this.bookService = bookService;
-        this.chapterService = chapterService;
-        this.bookPageMapper = bookPageMapper;
+        this.systemStatService = systemStatService;
     }
 
     /**
@@ -53,7 +49,7 @@ public class BookApiController {
                     page, pageSize,
                     query.getKeyword(), query.getRegion(), query.getStatus(),
                     query.getTag(),                     query.getSortField(), query.getSortDir(),
-                    query.getIngestStatus());
+                    query.getIngestStatus(), query.getChapterMin(), query.getChapterMax());
 
             PageResult<Book> pageResult = PageResult.of(
                     result.getCurrent(), result.getSize(), result.getTotal(), result.getRecords());
@@ -110,18 +106,15 @@ public class BookApiController {
     @GetMapping("/stats")
     public Map<String, Object> stats() {
         Map<String, Object> data = new HashMap<>();
-        data.put("bookCount", bookService.countAll());
-        data.put("chapterCount", chapterService.countAll());
-
-        Map<String, Object> img = bookPageMapper.stats();
-        long totalImg = img.get("total") == null ? 0L : ((Number) img.get("total")).longValue();
-        long downloadedImg = img.get("downloaded") == null ? 0L : ((Number) img.get("downloaded")).longValue();
-        data.put("totalImageCount", totalImg);
-        data.put("downloadedImageCount", downloadedImg);
+        com.man3.entity.SystemStat stat = systemStatService.snapshot();
+        data.put("bookCount", stat.getBookCount());
+        data.put("chapterCount", stat.getChapterCount());
+        data.put("totalImageCount", stat.getTotalImageCount());
+        data.put("downloadedImageCount", stat.getDownloadedImageCount());
 
         // crawl_status: 3-全部完成 -1-失败
-        data.put("doneCount", bookService.countByCrawlStatus(3));
-        data.put("failedCount", bookService.countByCrawlStatus(-1));
+        data.put("doneCount", stat.getDoneBookCount());
+        data.put("failedCount", stat.getFailedBookCount());
 
         Map<String, Object> resp = new HashMap<>();
         resp.put("code", 0);

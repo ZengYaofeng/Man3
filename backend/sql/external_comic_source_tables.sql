@@ -1,0 +1,46 @@
+-- 外部漫画来源主表：仅保存漫画元数据，不保存章节或图片。
+CREATE TABLE IF NOT EXISTS `niaoniaomh` (
+  `id`                 BIGINT NOT NULL AUTO_INCREMENT,
+  `source_book_id`     VARCHAR(255) NOT NULL,
+  `name`               VARCHAR(255) NOT NULL,
+  `author`             VARCHAR(255) DEFAULT NULL,
+  `tags`               VARCHAR(500) DEFAULT NULL,
+  `description`        TEXT,
+  `cover_url`          VARCHAR(1000) DEFAULT NULL,
+  `source_url`         VARCHAR(1000) NOT NULL,
+  `chapter_count`      INT DEFAULT NULL,
+  `status`             VARCHAR(64) DEFAULT NULL,
+  `source_update_text` VARCHAR(64) DEFAULT NULL,
+  `is_same`            TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否已存在于本地book表：1相同，0不同',
+  `matched_book_id`    BIGINT DEFAULT NULL,
+  `crawl_time`         DATETIME DEFAULT NULL,
+  `created_at`         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_niaoniaomh_source_book_id` (`source_book_id`),
+  KEY `idx_niaoniaomh_name` (`name`),
+  KEY `idx_niaoniaomh_same` (`is_same`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='鸟鸟韩漫漫画主表（不含章节和图片）';
+
+CREATE TABLE IF NOT EXISTS `yuyumh` (
+  `id`                 BIGINT NOT NULL AUTO_INCREMENT,
+  `source_book_id`     VARCHAR(255) NOT NULL,
+  `name`               VARCHAR(255) NOT NULL,
+  `author`             VARCHAR(255) DEFAULT NULL,
+  `tags`               VARCHAR(500) DEFAULT NULL,
+  `description`        TEXT,
+  `cover_url`          VARCHAR(1000) DEFAULT NULL,
+  `source_url`         VARCHAR(1000) NOT NULL,
+  `chapter_count`      INT DEFAULT NULL,
+  `status`             VARCHAR(64) DEFAULT NULL,
+  `source_update_text` VARCHAR(64) DEFAULT NULL,
+  `is_same`            TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否已存在于本地book表：1相同，0不同',
+  `matched_book_id`    BIGINT DEFAULT NULL,
+  `crawl_time`         DATETIME DEFAULT NULL,
+  `created_at`         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_yuyumh_source_book_id` (`source_book_id`),
+  KEY `idx_yuyumh_name` (`name`),
+  KEY `idx_yuyumh_same` (`is_same`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='汙汙漫畫漫画主表（不含章节和图片）';

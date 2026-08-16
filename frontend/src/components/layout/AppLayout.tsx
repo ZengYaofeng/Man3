@@ -43,6 +43,9 @@ const NAV: NavGroup[] = [
     title: '站点来源',
     items: [
       { to: '/sites', label: '站点列表', icon: Globe },
+      { to: '/sources/niaoniaomh', label: '鸟鸟韩漫', icon: BookOpen },
+      { to: '/sources/yuyumh', label: '汙汙漫畫', icon: BookOpen },
+      { to: '/external-crawlers', label: '外部爬虫管理', icon: Bot },
       { to: '/dedup', label: '全站查重', icon: Repeat },
     ],
   },
@@ -151,6 +154,9 @@ function HeaderTitle() {
     '/chapters': { icon: BookOpen, title: '章节列表', sub: '管理漫画章节数据' },
     '/ingest-logs': { icon: ClipboardList, title: '入库日志', sub: '查看每部漫画图片URL入库的执行记录' },
     '/sites': { icon: Globe, title: '站点列表', sub: '管理漫画来源站点（增删改查）' },
+    '/sources/niaoniaomh': { icon: BookOpen, title: '鸟鸟韩漫', sub: '对比鸟鸟韩漫与本地漫画库的同名漫画' },
+    '/sources/yuyumh': { icon: BookOpen, title: '汙汙漫畫', sub: '对比汙汙漫畫与本地漫画库的同名漫画' },
+    '/external-crawlers': { icon: Bot, title: '外部爬虫管理', sub: '管理来源站点的章节和图片 URL 入库任务及并发数' },
     '/dedup': { icon: Repeat, title: '全站查重', sub: '比对漫画表中未匹配的漫画名称' },
     '/crawl/progress': { icon: Bot, title: '爬取进度', sub: '实时爬虫运行监控' },
   }
