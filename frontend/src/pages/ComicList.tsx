@@ -135,7 +135,6 @@ export default function ComicList() {
   const [cancellingBatch, setCancellingBatch] = useState(false)
   const [ingestPreview, setIngestPreview] = useState<IngestPreview | null>(null)
   const [batchStatus, setBatchStatus] = useState<IngestBatchStatus | null>(null)
-  const [completionQueue, setCompletionQueue] = useState<IngestLog[]>([])
   const [completionNotice, setCompletionNotice] = useState<IngestLog | null>(null)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
   const seenBatchLogIds = useRef<Set<number>>(new Set())
@@ -313,7 +312,9 @@ export default function ComicList() {
           .sort((a, b) => a.id - b.id)
         if (completed.length > 0) {
           completed.forEach((log) => seenBatchLogIds.current.add(log.id))
-          setCompletionQueue((previous) => [...previous, ...completed])
+          // Completed books can arrive faster than a toast can be read. Keep only the
+          // most recent event so the final notification can disappear promptly.
+          setCompletionNotice(completed[completed.length - 1])
         }
         if (!status.running) {
           refreshBooks()
@@ -330,13 +331,6 @@ export default function ComicList() {
       window.clearInterval(timer)
     }
   }, [batchStatus?.batchNo, refreshBooks])
-
-  useEffect(() => {
-    if (completionNotice || completionQueue.length === 0) return
-    const [next, ...remaining] = completionQueue
-    setCompletionNotice(next)
-    setCompletionQueue(remaining)
-  }, [completionNotice, completionQueue])
 
   useEffect(() => {
     if (!completionNotice) return
@@ -835,7 +829,7 @@ export default function ComicList() {
                         <TableRow className="bg-slate-50/60 hover:bg-slate-50/60">
                           <TableCell colSpan={20} className="p-0">
                             <div className="px-10 py-3">
-                              <div className="mb-2 flex items-center justify-between">
+                              <div className="mb-2 flex items-center gap-1">
                                 <span className="text-sm font-medium text-slate-600">
                                   章节列表（{es.total} 话）
                                 </span>
@@ -889,7 +883,7 @@ export default function ComicList() {
                                     ))}
                                   </div>
                                   {/* 章节分页 */}
-                                  <div className="mt-3 flex items-center justify-end gap-1 text-slate-500">
+                                  <div className="mt-3 flex items-center justify-start gap-1 text-slate-500">
                                     <Button
                                       variant="outline"
                                       size="sm"
@@ -1106,7 +1100,7 @@ export default function ComicList() {
       )}
 
       {completionNotice && (
-        <div className="fixed right-6 bottom-6 z-[70] max-w-md animate-in fade-in slide-in-from-bottom-3 duration-300">
+        <div key={completionNotice.id} className="fixed right-6 bottom-6 z-[70] max-w-md animate-in fade-in slide-in-from-bottom-3 duration-300">
           <div className="border border-emerald-300 bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-3 text-white shadow-lg">
             <div className="text-sm font-semibold">入库完成</div>
             <div className="mt-1 text-sm leading-6">
