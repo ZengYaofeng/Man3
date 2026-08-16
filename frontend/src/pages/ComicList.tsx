@@ -829,7 +829,7 @@ export default function ComicList() {
                         <TableRow className="bg-slate-50/60 hover:bg-slate-50/60">
                           <TableCell colSpan={20} className="p-0">
                             <div className="px-10 py-3">
-                              <div className="mb-2 flex items-center justify-between">
+                              <div className="mb-2 flex items-center gap-1">
                                 <span className="text-sm font-medium text-slate-600">
                                   章节列表（{es.total} 话）
                                 </span>
@@ -883,7 +883,7 @@ export default function ComicList() {
                                     ))}
                                   </div>
                                   {/* 章节分页 */}
-                                  <div className="mt-3 flex items-center justify-end gap-1 text-slate-500">
+                                  <div className="mt-3 flex items-center justify-start gap-1 text-slate-500">
                                     <Button
                                       variant="outline"
                                       size="sm"

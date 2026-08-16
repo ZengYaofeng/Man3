@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   ChevronLeft,
@@ -23,9 +23,11 @@ import {
 } from '@/components/ui/select'
 
 const PAGES_PER_BATCH = 10
+const FULL_CHAPTER_PAGE_SIZE = 50
 const CHAPTER_PAGE_SIZE = 20
 const AUTO_READ_INTERVAL_MS = 1000
 const AUTO_READ_CHAPTER_PAUSE_MS = 3000
+const AUTO_READ_CHAPTER_READY_PAUSE_MS = 2000
 const AUTO_READ_SCROLL_PX = 420
 const AUTO_READ_SPEEDS = Array.from({ length: 11 }, (_, index) => Number((1 + index * 0.1).toFixed(1)))
 const AUTO_READ_ENABLED_KEY = 'man3.reader.auto-read-enabled'
@@ -49,6 +51,7 @@ export default function MangaReaderPage() {
   const [loadingImg, setLoadingImg] = useState(false)
   const [chapterError, setChapterError] = useState<string | null>(null)
   const [showToc, setShowToc] = useState(false)
+  const [fullChapterMode, setFullChapterMode] = useState(false)
   const [autoReadEnabled, setAutoReadEnabled] = useState(() => {
     return typeof window !== 'undefined' && window.localStorage.getItem(AUTO_READ_ENABLED_KEY) === 'true'
   })
@@ -57,6 +60,9 @@ export default function MangaReaderPage() {
     const saved = Number(window.localStorage.getItem(AUTO_READ_SPEED_KEY))
     return AUTO_READ_SPEEDS.includes(saved) ? saved : 1
   })
+  const pauseAfterChapterLoadRef = useRef(false)
+  const autoReadResumeAtRef = useRef(0)
+  const autoReadChapterTokenRef = useRef(0)
 
   const bookIdNum = Number(bookId)
   const chapterIdNum = Number(chapterId)
@@ -114,6 +120,36 @@ export default function MangaReaderPage() {
       setTotal(res.total)
       setPage(res.page)
       window.scrollTo({ top: 0 })
+      if (pauseAfterChapterLoadRef.current) {
+        pauseAfterChapterLoadRef.current = false
+        autoReadResumeAtRef.current = Date.now() + AUTO_READ_CHAPTER_READY_PAUSE_MS
+      }
+    } finally {
+      setLoadingImg(false)
+    }
+  }, [])
+
+  const loadEntireChapter = useCallback(async (chId: number) => {
+    setLoadingImg(true)
+    try {
+      const first = await fetchBookPages(chId, 1, FULL_CHAPTER_PAGE_SIZE)
+      const requestCount = Math.ceil(first.total / FULL_CHAPTER_PAGE_SIZE)
+      const remaining = await Promise.all(
+        Array.from({ length: Math.max(0, requestCount - 1) }, (_, index) =>
+          fetchBookPages(chId, index + 2, FULL_CHAPTER_PAGE_SIZE),
+        ),
+      )
+      setPages([...
+        first.list,
+        ...remaining.flatMap((result) => result.list),
+      ])
+      setTotal(first.total)
+      setPage(1)
+      window.scrollTo({ top: 0 })
+      if (pauseAfterChapterLoadRef.current) {
+        pauseAfterChapterLoadRef.current = false
+        autoReadResumeAtRef.current = Date.now() + AUTO_READ_CHAPTER_READY_PAUSE_MS
+      }
     } finally {
       setLoadingImg(false)
     }
@@ -121,23 +157,29 @@ export default function MangaReaderPage() {
 
   // 切换章节时重置图片
   useEffect(() => {
-    if (currentChapterId != null) loadPages(currentChapterId, 1)
+    if (currentChapterId != null) {
+      if (fullChapterMode) loadEntireChapter(currentChapterId)
+      else loadPages(currentChapterId, 1)
+    }
     else {
       setPages([])
       setTotal(0)
     }
-  }, [currentChapterId, loadPages])
+  }, [currentChapterId, fullChapterMode, loadEntireChapter, loadPages])
 
   const goChapter = useCallback((delta: number) => {
     const ni = currentIndex + delta
     if (ni >= 0 && ni < chapters.length) {
       const c = chapters[ni]
+      // 先阻止上一章遗留的自动滚动，等新章节图片准备好后再恢复。
+      pauseAfterChapterLoadRef.current = true
+      autoReadChapterTokenRef.current += 1
       setCurrentChapterId(c.id)
       navigate(`/reader/${bookIdNum}/${c.id}`, { replace: true })
     }
   }, [bookIdNum, chapters, currentIndex, navigate])
 
-  const imgTotalPages = Math.max(1, Math.ceil(total / PAGES_PER_BATCH))
+  const imgTotalPages = fullChapterMode ? 1 : Math.max(1, Math.ceil(total / PAGES_PER_BATCH))
   const firstImgNo = (page - 1) * PAGES_PER_BATCH + 1
   const lastImgNo = Math.min(page * PAGES_PER_BATCH, total)
 
@@ -151,9 +193,11 @@ export default function MangaReaderPage() {
 
   useEffect(() => {
     if (!autoReadEnabled || loadingChapter || loadingImg || pages.length === 0 || currentChapterId == null) return
+    if (pauseAfterChapterLoadRef.current) return
 
     let stopped = false
     let timer: number | undefined
+    const chapterToken = autoReadChapterTokenRef.current
     const clearTimer = () => {
       if (timer !== undefined) window.clearTimeout(timer)
     }
@@ -161,8 +205,9 @@ export default function MangaReaderPage() {
       clearTimer()
       timer = window.setTimeout(callback, delay)
     }
+    const resumeDelay = autoReadResumeAtRef.current - Date.now()
     const advance = () => {
-      if (stopped) return
+      if (stopped || chapterToken !== autoReadChapterTokenRef.current) return
       const atBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4
       if (!atBottom) {
         window.scrollBy({ top: AUTO_READ_SCROLL_PX * autoReadSpeed, behavior: 'smooth' })
@@ -184,7 +229,7 @@ export default function MangaReaderPage() {
       }, AUTO_READ_CHAPTER_PAUSE_MS)
     }
 
-    schedule(advance, AUTO_READ_INTERVAL_MS)
+    schedule(advance, resumeDelay > 0 ? resumeDelay : AUTO_READ_INTERVAL_MS)
     return () => {
       stopped = true
       clearTimer()
@@ -302,6 +347,20 @@ export default function MangaReaderPage() {
               <span className="sm:hidden">{autoReadEnabled ? '关闭' : '开启'}</span>
               <span className="hidden sm:inline">{autoReadEnabled ? '关闭自动阅读' : '开启自动阅读'}</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setFullChapterMode((enabled) => !enabled)}
+              className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-sm transition-colors ${
+                fullChapterMode
+                  ? 'border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                  : 'border-slate-200 text-slate-600 hover:bg-slate-100'
+              }`}
+              title={fullChapterMode ? '切换为分页阅读' : '连续阅读本章全部图片'}
+            >
+              <BookOpen className="size-4" />
+              <span className="hidden sm:inline">{fullChapterMode ? '分页阅读' : '全篇阅读'}</span>
+              <span className="sm:hidden">全篇</span>
+            </button>
             <Select value={String(autoReadSpeed)} onValueChange={(value) => setAutoReadSpeed(Number(value))}>
               <SelectTrigger className="h-8 w-[72px] text-xs" aria-label="自动阅读倍速">
                 <SelectValue />
@@ -333,7 +392,7 @@ export default function MangaReaderPage() {
           {chapterTitle}
         </h1>
         <div className="mt-1 text-sm text-slate-400">
-          图片 {firstImgNo}-{lastImgNo} / {total}
+          {fullChapterMode ? `全篇阅读 · 图片 1-${total} / ${total}` : `图片 ${firstImgNo}-${lastImgNo} / ${total}`}
         </div>
       </div>
 
@@ -409,8 +468,8 @@ export default function MangaReaderPage() {
         )}
       </main>
 
-      {/* 底部翻页 */}
-      <footer className="sticky bottom-0 z-10 border-t border-slate-200 bg-white/95 backdrop-blur">
+      {/* 分页模式下显示底部翻页；全篇阅读连续显示本章全部图片。 */}
+      {!fullChapterMode && <footer className="sticky bottom-0 z-10 border-t border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-center gap-3 px-4 py-2">
           <button
             type="button"
@@ -432,7 +491,7 @@ export default function MangaReaderPage() {
             下一页 <ChevronRight className="size-4" />
           </button>
         </div>
-      </footer>
+      </footer>}
     </div>
   )
 }
